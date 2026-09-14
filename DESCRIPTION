@@ -1,0 +1,26 @@
+Package: etvar
+Title: Event-Targeted Vector Autoregression
+Version: 0.1.0
+Authors@R: 
+    person("Gabor", "Pinter", role = c("aut", "cre"),
+           email = "gabor.pinter@example.com")
+Description: Estimate structural vector autoregressive (VAR) models identified
+    by targeting a specific event date. The package finds the orthogonal rotation
+    of the Cholesky factor that best explains observed movements on the event
+    date using a single structural shock. Provides tools for impulse response
+    analysis, historical decomposition (including counterfactual intervention
+    paths), and publication-ready diagnostic plots.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Imports:
+    parallel,
+    stats,
+    graphics,
+    grDevices,
+    ggplot2,
+    tidyr
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
