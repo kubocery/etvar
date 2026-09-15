@@ -1,0 +1,34 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.Rhistory$
+^\.RData$
+^\.git
+^\.gitignore$
+^.*\.Rcheck$
+^etvar_.*\.tar\.gz$
+
+# Original flat scripts (before packaging)
+^aa_run_ETVAR_replication\.R$
+^companio3_trend\.R$
+^compute_structural_irfs\.R$
+^gen_y2_x2\.R$
+^ger\.R$
+^get_a0\.R$
+^hdt\.R$
+^hdt2\.R$
+^plot_counterfactual\.R$
+^plot_hd_bars\.R$
+^plot_irfs\.R$
+^plot_structural_errors\.R$
+^plot_tariff_errors\.R$
+^rearrange_decomposition\.R$
+^run_optimization\.R$
+^var0\.R$
+^wold\.R$
+
+# Data files (kept in inst/extdata instead)
+^ETVAR_data\.mat$
+^WP_values\.mat$
+^dates\.csv$
+^optimal_parameters.*\.rds$
+^tar_err\.pdf$

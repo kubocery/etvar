@@ -4,6 +4,8 @@ Version: 0.1.0
 Authors@R: 
     person("Gabor", "Pinter", role = c("aut", "cre"),
            email = "gabor.pinter@example.com")
+Author: Gabor Pinter [aut, cre]
+Maintainer: Gabor Pinter <gabor.pinter@example.com>
 Description: Estimates structural vector autoregressive (VAR) models identified
     by targeting one or more event dates. The package finds the orthogonal
     rotation of the Cholesky factor that best explains observed movements on
