@@ -10,8 +10,9 @@ Description: Estimates structural vector autoregressive (VAR) models identified
     by targeting one or more event dates. The package finds the orthogonal
     rotation of the Cholesky factor that best explains observed movements on
     the event dates using a single structural shock. It provides tools for
-    impulse response analysis, historical decomposition (including
-    counterfactual intervention paths), and diagnostic plots.
+    impulse response analysis, structural forecast error variance
+    decomposition, historical decomposition (including counterfactual
+    intervention paths), and diagnostic plots.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends:

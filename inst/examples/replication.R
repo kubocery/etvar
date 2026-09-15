@@ -57,6 +57,9 @@ summary(fit)
 # Impulse response functions (normalised by VIX response at horizon 1)
 plot(fit, type = "irfs", scaling_index = c(2, 1, 1), conf_int = TRUE, conf_level = 0.8)
 
+# Forecast error variance shares: target shock versus all other shocks
+plot(fit, type = "fevd")
+
 # Counterfactual vs realised for 1Y Inflation Swap Rate (variable 6)
 plot(fit, type = "counterfactual", variable = 1, n_tail = 40)
 

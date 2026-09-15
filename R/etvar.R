@@ -386,6 +386,8 @@ summary.etvar <- function(object, ...) {
 #' @param type Character. Type of plot:
 #'   \describe{
 #'     \item{`"irfs"`}{Structural impulse response functions.}
+#'     \item{`"fevd"`}{Structural forecast error variance decomposition,
+#'       grouping the selected target shock against all other shocks.}
 #'     \item{`"hd"`}{Historical decomposition stacked bar charts.}
 #'     \item{`"counterfactual"`}{Counterfactual vs realised path (specify
 #'       `variable` argument).}
@@ -394,8 +396,10 @@ summary.etvar <- function(object, ...) {
 #'   }
 #' @param variable Integer. For `type = "counterfactual"`, which variable
 #'   to display. Default 1.
-#' @param shock    Integer. Shock to display for IRF, counterfactual, and error
-#'   plots. Default: the target shock.
+#' @param variables Integer vector or `NULL`. For `type = "fevd"`, variables
+#'   to display. The default displays all variables.
+#' @param shock    Integer. Shock to display for IRF, FEVD, counterfactual, and
+#'   error plots. Default: the target shock.
 #' @param scaling_index Numeric vector for `type = "irfs"`. See
 #'   [plot_etvar_irfs()].
 #' @param scaling_multiplier Numeric scalar for `type = "irfs"`. Applied
@@ -424,6 +428,8 @@ summary.etvar <- function(object, ...) {
 #'   - Character scalar: custom title.
 #'   - Character vector: for multi-panel variable plots, custom titles by
 #'     variable/panel. Named vectors are matched to variable names.
+#'   For `type = "fevd"`, `title` must be a scalar because variable names are
+#'   displayed in facet headings.
 #' @param conf_int Logical. For `type = "irfs"`, draw bootstrap confidence
 #'   intervals around the IRFs. Default `FALSE`.
 #' @param conf_level Numeric. Confidence level used when `conf_int = TRUE`.
@@ -437,29 +443,33 @@ summary.etvar <- function(object, ...) {
 #' @param ci_col Fill colour for IRF confidence bands.
 #' @param ci_border Border colour for IRF confidence bands. Default `NA`.
 #' @param ...     Additional arguments (currently unused).
-#' @return A ggplot object (for `"counterfactual"` and `"errors"`) or `NULL`
-#'   invisibly (for base-R plots).
+#' @return A ggplot object (for `"fevd"`, `"counterfactual"`, and `"errors"`)
+#'   or `NULL` invisibly (for base-R plots).
 #' @export
-plot.etvar <- function(x, type = c("irfs", "hd", "counterfactual", "errors"),
-                       variable = 1L, shock = NULL,
-                       scaling_index = NULL,
-                       scaling_multiplier = 1,
-                       common_ylim = FALSE,
-                       event_dates = NULL, event_labels = NULL,
-                       n_tail = 40L,
-                       x_date_breaks = "1 week",
-                       x_break_every = 2L,
-                       merge_target_components = FALSE,
-                       title = NULL,
-                       conf_int = FALSE,
-                       conf_level = 0.95,
-                       n_boot = 500L,
-                       ci_seed = NULL,
-                       irf_ci = NULL,
-                       ci_col = grDevices::adjustcolor("gray70",
-                                                       alpha.f = 0.45),
-                       ci_border = NA,
-                       ...) {
+plot.etvar <- function(
+    x,
+    type = c("irfs", "fevd", "hd", "counterfactual", "errors"),
+    variable = 1L,
+    variables = NULL,
+    shock = NULL,
+    scaling_index = NULL,
+    scaling_multiplier = 1,
+    common_ylim = FALSE,
+    event_dates = NULL,
+    event_labels = NULL,
+    n_tail = 40L,
+    x_date_breaks = "1 week",
+    x_break_every = 2L,
+    merge_target_components = FALSE,
+    title = NULL,
+    conf_int = FALSE,
+    conf_level = 0.95,
+    n_boot = 500L,
+    ci_seed = NULL,
+    irf_ci = NULL,
+    ci_col = grDevices::adjustcolor("gray70", alpha.f = 0.45),
+    ci_border = NA,
+    ...) {
   if (!inherits(x, "etvar")) {
     stop("`x` must be an `etvar` object.", call. = FALSE)
   }
@@ -492,6 +502,14 @@ plot.etvar <- function(x, type = c("irfs", "hd", "counterfactual", "errors"),
         irf_ci         = irf_ci,
         ci_col         = ci_col,
         ci_border      = ci_border
+      )
+    },
+    fevd = {
+      fevd_result <- compute_fevd(x, target_shock = shock)
+      plot_etvar_fevd(
+        fevd = fevd_result,
+        variables = variables,
+        title = title
       )
     },
     hd = {

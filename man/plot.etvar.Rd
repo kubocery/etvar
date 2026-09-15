@@ -6,8 +6,9 @@
 \usage{
 \method{plot}{etvar}(
   x,
-  type = c("irfs", "hd", "counterfactual", "errors"),
+  type = c("irfs", "fevd", "hd", "counterfactual", "errors"),
   variable = 1L,
+  variables = NULL,
   shock = NULL,
   scaling_index = NULL,
   scaling_multiplier = 1,
@@ -35,6 +36,8 @@
 \item{type}{Character. Type of plot:
 \describe{
 \item{\code{"irfs"}}{Structural impulse response functions.}
+\item{\code{"fevd"}}{Structural forecast error variance decomposition,
+grouping the selected target shock against all other shocks.}
 \item{\code{"hd"}}{Historical decomposition stacked bar charts.}
 \item{\code{"counterfactual"}}{Counterfactual vs realised path (specify
 \code{variable} argument).}
@@ -45,8 +48,11 @@ argument).}
 \item{variable}{Integer. For \code{type = "counterfactual"}, which variable
 to display. Default 1.}
 
-\item{shock}{Integer. Shock to display for IRF, counterfactual, and error
-plots. Default: the target shock.}
+\item{variables}{Integer vector or \code{NULL}. For \code{type = "fevd"}, variables
+to display. The default displays all variables.}
+
+\item{shock}{Integer. Shock to display for IRF, FEVD, counterfactual, and
+error plots. Default: the target shock.}
 
 \item{scaling_index}{Numeric vector for \code{type = "irfs"}. See
 \code{\link[=plot_etvar_irfs]{plot_etvar_irfs()}}.}
@@ -86,6 +92,8 @@ component into one bar segment. Default \code{FALSE}.}
 \item Character scalar: custom title.
 \item Character vector: for multi-panel variable plots, custom titles by
 variable/panel. Named vectors are matched to variable names.
+For \code{type = "fevd"}, \code{title} must be a scalar because variable names are
+displayed in facet headings.
 }}
 
 \item{conf_int}{Logical. For \code{type = "irfs"}, draw bootstrap confidence
@@ -110,8 +118,8 @@ confidence intervals.}
 \item{...}{Additional arguments (currently unused).}
 }
 \value{
-A ggplot object (for \code{"counterfactual"} and \code{"errors"}) or \code{NULL}
-invisibly (for base-R plots).
+A ggplot object (for \code{"fevd"}, \code{"counterfactual"}, and \code{"errors"})
+or \code{NULL} invisibly (for base-R plots).
 }
 \description{
 S3 plotting method that dispatches to specialised plotting functions based

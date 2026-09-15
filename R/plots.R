@@ -3,7 +3,10 @@
 # ==============================================================================
 
 # Suppress R CMD check NOTEs for ggplot2 NSE columns
-utils::globalVariables(c("Value", "Series", "Structural_error", "dates"))
+utils::globalVariables(c(
+  "Value", "Series", "Structural_error", "dates",
+  "Horizon", "Share", "Component", "Variable"
+))
 
 etvar_select_panel_title <- function(title, default_titles, variable_index,
                                      panel_index = variable_index,
@@ -60,6 +63,146 @@ etvar_select_scalar_title <- function(title, default_title, arg = "title") {
 
   title <- as.character(title)
   if (is.na(title)) "" else title
+}
+
+
+#' Plot an ETVAR forecast error variance decomposition
+#'
+#' Draws a stacked-bar FEVD for each selected variable. The two components are
+#' the event-targeted structural shock and the sum of all other structural
+#' shocks. At every variable and horizon, the two plotted shares sum to one.
+#'
+#' @param fevd An `"etvar_fevd"` object from [compute_fevd()].
+#' @param variables Integer vector or `NULL`. Variables to display. The default
+#'   displays every variable.
+#' @param title Character, `NULL`, or `NA`. A scalar plot title. `NULL` uses
+#'   `"Structural forecast error variance decomposition"` and `NA` removes the
+#'   title.
+#' @param component_labels Character vector of length two. Labels for the target
+#'   shock and all other shocks, respectively.
+#' @param colors Character vector of length two. Fill colors for the target
+#'   shock and all other shocks, respectively.
+#' @param facet_ncol Integer. Number of columns in the faceted display.
+#'   Default 2.
+#' @return A [ggplot2::ggplot] object.
+#' @export
+plot_etvar_fevd <- function(
+    fevd,
+    variables = NULL,
+    title = NULL,
+    component_labels = NULL,
+    colors = c("#D95319", "#4DBEEE"),
+    facet_ncol = 2L) {
+  if (!inherits(fevd, "etvar_fevd")) {
+    stop("`fevd` must be an `etvar_fevd` object from `compute_fevd()`.",
+         call. = FALSE)
+  }
+
+  target <- .etvar_numeric_matrix(fevd$target, "fevd$target")
+  others <- .etvar_numeric_matrix(fevd$others, "fevd$others")
+  if (!identical(dim(target), dim(others))) {
+    stop("`fevd$target` and `fevd$others` must have the same dimensions.",
+         call. = FALSE)
+  }
+
+  n <- nrow(target)
+  nimp <- ncol(target)
+  if (is.null(variables)) variables <- seq_len(n)
+  variables <- .etvar_index_vector(variables, "variables", n)
+  facet_ncol <- .etvar_integer_scalar(facet_ncol, "facet_ncol", min = 1L)
+
+  variable_names <- fevd$variable_names
+  if (!is.character(variable_names) || length(variable_names) != n ||
+      anyNA(variable_names) || any(!nzchar(variable_names))) {
+    variable_names <- paste0("V", seq_len(n))
+  }
+
+  if (is.null(component_labels)) {
+    component_labels <- c(
+      paste0("Target shock (", fevd$target_shock, ")"),
+      "Other shocks"
+    )
+  }
+  if (!is.character(component_labels) || length(component_labels) != 2L ||
+      anyNA(component_labels) || any(!nzchar(component_labels)) ||
+      anyDuplicated(component_labels)) {
+    stop("`component_labels` must contain two distinct, non-empty labels.",
+         call. = FALSE)
+  }
+  if (!is.character(colors) || length(colors) != 2L ||
+      anyNA(colors) || any(!nzchar(colors))) {
+    stop("`colors` must contain two non-empty color values.", call. = FALSE)
+  }
+
+  plot_title <- etvar_select_scalar_title(
+    title,
+    "Structural forecast error variance decomposition"
+  )
+  selected_names <- make.unique(variable_names[variables], sep = " #")
+  horizons <- seq_len(nimp)
+
+  target_values <- as.vector(t(target[variables, , drop = FALSE]))
+  other_values <- as.vector(t(others[variables, , drop = FALSE]))
+  variable_factor <- factor(
+    rep(selected_names, each = nimp),
+    levels = selected_names
+  )
+
+  plot_data <- rbind(
+    data.frame(
+      Horizon = rep(horizons, times = length(variables)),
+      Share = target_values,
+      Component = component_labels[1L],
+      Variable = variable_factor
+    ),
+    data.frame(
+      Horizon = rep(horizons, times = length(variables)),
+      Share = other_values,
+      Component = component_labels[2L],
+      Variable = variable_factor
+    )
+  )
+  plot_data$Component <- factor(
+    plot_data$Component,
+    levels = component_labels
+  )
+
+  ggplot2::ggplot(
+    plot_data,
+    ggplot2::aes(x = Horizon, y = Share, fill = Component)
+  ) +
+    ggplot2::geom_col(
+      width = 0.9,
+      color = "white",
+      linewidth = 0.1
+    ) +
+    ggplot2::facet_wrap(~Variable, ncol = facet_ncol) +
+    ggplot2::scale_fill_manual(
+      values = stats::setNames(colors, component_labels),
+      breaks = component_labels
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = function(limits) {
+        unique(pmax(1, round(pretty(limits))))
+      }
+    ) +
+    ggplot2::scale_y_continuous(
+      breaks = seq(0, 1, by = 0.25),
+      labels = function(x) paste0(round(100 * x), "%"),
+      expand = ggplot2::expansion(mult = c(0, 0.02))
+    ) +
+    ggplot2::coord_cartesian(ylim = c(0, 1)) +
+    ggplot2::labs(
+      x = "Forecast horizon",
+      y = "Share of forecast error variance",
+      fill = NULL,
+      title = plot_title
+    ) +
+    ggplot2::theme_bw() +
+    ggplot2::theme(
+      legend.position = "bottom",
+      panel.grid.minor = ggplot2::element_blank()
+    )
 }
 
 
