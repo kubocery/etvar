@@ -18,18 +18,23 @@
 #' Q <- euler_rotation(c(0.5, -0.3, 1.2), n = 3)
 #' round(t(Q) %*% Q, 10)  # Should be identity
 euler_rotation <- function(theta, n) {
-  expected <- n * (n - 1) / 2
-  if (length(theta) != expected) {
-    stop("Length of theta must be n*(n-1)/2 = ", expected,
-         " for n = ", n, ". Got ", length(theta), ".")
+  n <- .etvar_integer_scalar(n, "n", min = 1L)
+  if (!is.numeric(theta) || anyNA(theta) || any(!is.finite(theta))) {
+    stop("`theta` must be a finite numeric vector.", call. = FALSE)
   }
 
-  R_mat     <- diag(n)
+  expected <- n * (n - 1) / 2
+  if (length(theta) != expected) {
+    stop("Length of `theta` must be n * (n - 1) / 2 = ", expected,
+         " for n = ", n, "; got ", length(theta), ".", call. = FALSE)
+  }
+
+  R_mat     <- diag(nrow = n)
   angle_idx <- 1L
 
-  for (i in 1:(n - 1)) {
-    for (j in (i + 1):n) {
-      Rij       <- diag(n)
+  for (i in seq_len(n - 1L)) {
+    for (j in seq.int(i + 1L, n)) {
+      Rij       <- diag(nrow = n)
       ang       <- theta[angle_idx]
       Rij[i, i] <-  cos(ang)
       Rij[i, j] <- -sin(ang)

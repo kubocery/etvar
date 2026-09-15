@@ -7,11 +7,11 @@
   if (constant == 1L) {
     if (trend == 1L)      return(c(1, tt, auxi))
     if (trend == 2L)      return(c(1, tt, tt2, auxi))
-    return(c(1, auxi))
+    c(1, auxi)
   } else {
     if (trend == 1L)      return(c(tt, auxi))
     if (trend == 2L)      return(c(tt, tt2, auxi))
-    return(auxi)
+    auxi
   }
 }
 
@@ -41,10 +41,21 @@
 #'   }
 #' @export
 hist_decomposition <- function(A0, ALPHA, Y, X, n, lags, trend, constant) {
+  inputs <- .etvar_validate_decomposition(
+    A0, ALPHA, Y, X, n, lags, trend, constant
+  )
+  A0 <- inputs$A0
+  ALPHA <- inputs$ALPHA
+  Y <- inputs$Y
+  X <- inputs$X
+  n <- inputs$n
+  lags <- inputs$lags
+  trend <- inputs$trend
+  constant <- inputs$constant
   Traw <- nrow(Y) + lags
 
   errors_red <- Y - X %*% ALPHA
-  errors_str <- t(solve(A0) %*% t(errors_red))
+  errors_str <- t(solve(A0, t(errors_red)))
 
   Y1_shock_detrend <- array(0, dim = c(Traw, n, n))
   errors_str10     <- array(0, dim = c(Traw - lags, n, n))
@@ -55,23 +66,23 @@ hist_decomposition <- function(A0, ALPHA, Y, X, n, lags, trend, constant) {
   nt <- trend
 
   # --- Initialise from pre-sample lags ---
-  for (i_lag in 1:lags) {
+  for (i_lag in seq_len(lags)) {
     idx_end   <- (lags - (i_lag - 1)) * n + (nc + nt)
     idx_start <- idx_end - n + 1
     val       <- X[1, idx_start:idx_end]
     Y1_shock_det[i_lag, ] <- val
-    for (i in 1:n) Y1_shock[i_lag, , i] <- val
+    for (i in seq_len(n)) Y1_shock[i_lag, , i] <- val
   }
 
   auxi_det <- numeric(lags * n)
-  for (i in 1:lags) {
+  for (i in seq_len(lags)) {
     idx_s <- 1 + (i - 1) * n
     idx_e <- n + (i - 1) * n
     auxi_det[idx_s:idx_e] <- Y1_shock_det[(lags + 1) - i, ]
   }
 
   # --- Map structural errors to reduced-form ---
-  for (i in 1:n) {
+  for (i in seq_len(n)) {
     lala      <- matrix(0, nrow = Traw - lags, ncol = n)
     lala[, i] <- errors_str[, i]
     errors_str10[, , i] <- t(A0 %*% t(lala))
@@ -81,8 +92,8 @@ hist_decomposition <- function(A0, ALPHA, Y, X, n, lags, trend, constant) {
   tt  <- 1
   tt2 <- 1
 
-  for (i_time in (lags + 1):Traw) {
-    for (iauxi in 1:lags) {
+  for (i_time in seq.int(lags + 1L, Traw)) {
+    for (iauxi in seq_len(lags)) {
       idx_s <- 1 + (iauxi - 1) * n
       idx_e <- n + (iauxi - 1) * n
       auxi_det[idx_s:idx_e] <- Y1_shock_det[i_time - iauxi, ]
@@ -91,9 +102,9 @@ hist_decomposition <- function(A0, ALPHA, Y, X, n, lags, trend, constant) {
     reg_vec <- .build_reg_vec(constant, trend, tt, tt2, auxi_det)
     Y1_shock_det[i_time, ] <- matrix(reg_vec, nrow = 1) %*% ALPHA
 
-    for (i_shock in 1:n) {
+    for (i_shock in seq_len(n)) {
       auxi_shock <- numeric(lags * n)
-      for (iauxi2 in 1:lags) {
+      for (iauxi2 in seq_len(lags)) {
         idx_s <- 1 + (iauxi2 - 1) * n
         idx_e <- n + (iauxi2 - 1) * n
         auxi_shock[idx_s:idx_e] <- Y1_shock[i_time - iauxi2, , i_shock]
@@ -105,8 +116,8 @@ hist_decomposition <- function(A0, ALPHA, Y, X, n, lags, trend, constant) {
       term2 <- errors_str10[i_time - lags, , i_shock]
 
       Y1_shock[i_time, , i_shock]         <- term1 + term2
-      Y1_shock_detrend[i_time, , i_shock] <- Y1_shock[i_time, , i_shock] -
-                                              Y1_shock_det[i_time, ]
+      Y1_shock_detrend[i_time, , i_shock] <-
+        Y1_shock[i_time, , i_shock] - Y1_shock_det[i_time, ]
     }
 
     tt  <- tt + 1
@@ -143,10 +154,23 @@ hist_decomposition <- function(A0, ALPHA, Y, X, n, lags, trend, constant) {
 #' @export
 hist_decomposition_3d <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
                                   datestar) {
+  inputs <- .etvar_validate_decomposition(
+    A0, ALPHA, Y, X, n, lags, trend, constant
+  )
+  A0 <- inputs$A0
+  ALPHA <- inputs$ALPHA
+  Y <- inputs$Y
+  X <- inputs$X
+  n <- inputs$n
+  lags <- inputs$lags
+  trend <- inputs$trend
+  constant <- inputs$constant
+  datestar <- .etvar_integer_scalar(datestar, "datestar", min = 0L,
+                                    max = nrow(Y))
   Traw <- nrow(Y) + lags
 
   errors_red <- Y - X %*% ALPHA
-  errors_str <- t(solve(A0) %*% t(errors_red))
+  errors_str <- t(solve(A0, t(errors_red)))
 
   errors_str_stop <- errors_str
   if (datestar > 0) {
@@ -166,25 +190,25 @@ hist_decomposition_3d <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
   nc <- as.integer(constant == 1L)
   nt <- trend
 
-  for (i_lag in 1:lags) {
+  for (i_lag in seq_len(lags)) {
     idx_end   <- (lags - (i_lag - 1)) * n + (nc + nt)
     idx_start <- idx_end - n + 1
     val <- X[1, idx_start:idx_end]
     Y1_shock_det[i_lag, ] <- val
-    for (i in 1:n) {
+    for (i in seq_len(n)) {
       Y1_shock[i_lag, , i]      <- val
       Y1_shock_stop[i_lag, , i] <- val
     }
   }
 
   auxi_det <- numeric(lags * n)
-  for (i in 1:lags) {
+  for (i in seq_len(lags)) {
     idx_s <- 1 + (i - 1) * n
     idx_e <- n + (i - 1) * n
     auxi_det[idx_s:idx_e] <- Y1_shock_det[(lags + 1) - i, ]
   }
 
-  for (i in 1:n) {
+  for (i in seq_len(n)) {
     lala      <- matrix(0, nrow = Traw - lags, ncol = n)
     lala[, i] <- errors_str[, i]
     errors_str10[, , i] <- t(A0 %*% t(lala))
@@ -197,8 +221,8 @@ hist_decomposition_3d <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
   tt  <- 1
   tt2 <- 1
 
-  for (i_time in (lags + 1):Traw) {
-    for (iauxi in 1:lags) {
+  for (i_time in seq.int(lags + 1L, Traw)) {
+    for (iauxi in seq_len(lags)) {
       idx_s <- 1 + (iauxi - 1) * n
       idx_e <- n + (iauxi - 1) * n
       auxi_det[idx_s:idx_e] <- Y1_shock_det[i_time - iauxi, ]
@@ -207,12 +231,13 @@ hist_decomposition_3d <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
     reg_det <- .build_reg_vec(constant, trend, tt, tt2, auxi_det)
     Y1_shock_det[i_time, ] <- reg_det %*% ALPHA
 
-    for (i_shock in 1:n) {
-      for (iauxi2 in 1:lags) {
+    for (i_shock in seq_len(n)) {
+      for (iauxi2 in seq_len(lags)) {
         idx_s <- 1 + (iauxi2 - 1) * n
         idx_e <- n + (iauxi2 - 1) * n
         auxi_shock[idx_s:idx_e]      <- Y1_shock[i_time - iauxi2, , i_shock]
-        auxi_shock_stop[idx_s:idx_e] <- Y1_shock_stop[i_time - iauxi2, , i_shock]
+        auxi_shock_stop[idx_s:idx_e] <-
+          Y1_shock_stop[i_time - iauxi2, , i_shock]
       }
 
       err_idx <- i_time - lags
@@ -261,7 +286,8 @@ hist_decomposition_3d <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
 #' @param target_shock     Integer. Which shock to isolate. Default 1.
 #' @return Named list:
 #'   \describe{
-#'     \item{total}{Matrix (T x n). Sum of all shock contributions per variable.}
+#'     \item{total}{Matrix (T x n). Sum of all shock contributions per
+#'       variable.}
 #'     \item{target}{Matrix (T x n). Contribution of the target shock.}
 #'     \item{target_stop}{Matrix (T x n). Target shock on the intervention path
 #'       (or `NULL`).}
@@ -272,11 +298,24 @@ hist_decomposition_3d <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
 #' @export
 rearrange_shocks <- function(hist_matrix, hist_matrix_stop = NULL,
                              T_obs, n, target_shock = 1L) {
+  T_obs <- .etvar_integer_scalar(T_obs, "T_obs", min = 1L)
+  n <- .etvar_integer_scalar(n, "n", min = 1L)
+  target_shock <- .etvar_integer_scalar(target_shock, "target_shock",
+                                         min = 1L, max = n)
+  hist_matrix <- .etvar_numeric_array(
+    hist_matrix, "hist_matrix", c(T_obs, n, n)
+  )
+  if (!is.null(hist_matrix_stop)) {
+    hist_matrix_stop <- .etvar_numeric_array(
+      hist_matrix_stop, "hist_matrix_stop", c(T_obs, n, n)
+    )
+  }
+
   hist_all      <- array(0, dim = c(T_obs, n, n))
   has_stop      <- !is.null(hist_matrix_stop)
   if (has_stop) hist_all_stop <- array(0, dim = c(T_obs, n, n))
 
-  for (i in 1:n) {
+  for (i in seq_len(n)) {
     hist_all[, , i] <- hist_matrix[, i, ]
     if (has_stop) hist_all_stop[, , i] <- hist_matrix_stop[, i, ]
   }
@@ -285,7 +324,7 @@ rearrange_shocks <- function(hist_matrix, hist_matrix_stop = NULL,
   target_mat  <- matrix(0, nrow = T_obs, ncol = n)
   target_stop <- if (has_stop) matrix(0, nrow = T_obs, ncol = n) else NULL
 
-  for (iv in 1:n) {
+  for (iv in seq_len(n)) {
     target_mat[, iv] <- hist_all[, target_shock, iv]
     total[, iv]      <- rowSums(hist_all[, , iv])
     if (has_stop) target_stop[, iv] <- hist_all_stop[, target_shock, iv]

@@ -9,12 +9,9 @@
 # the optimiser finds the rotation that best explains movements on every
 # date in the window at once.
 #
-# Requirements:
-#   devtools::install("path/to/etvar")  # or devtools::load_all()
+# Requirement: install the etvar package before running this script.
 # ==============================================================================
 
-# If running from source, reload the package to pick up any recent edits:
-if (requireNamespace("devtools", quietly = TRUE)) devtools::load_all(".")
 library(etvar)
 
 # --- Load data ---
@@ -54,7 +51,7 @@ fit_window <- etvar(
   trend          = example$trend,
   shock_index    = 1,
   start_angles   = theta_start,
-  optimize       = TRUE,
+  optimize       = FALSE,
   nimp           = 30,
   variable_names = variable_names,
   verbose        = TRUE

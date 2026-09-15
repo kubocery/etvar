@@ -7,10 +7,10 @@
 #   A) The one-call interface: etvar() + plot()
 #   B) The step-by-step interface for fine-grained control
 #
-# Requirements:
-#   devtools::install("path/to/etvar")  # or devtools::load_all()
+# Requirement: install the etvar package before running this script.
 # ==============================================================================
-setwd('C:/Users/A96RA7A/Documents/moje/phd/ETVAR_package_v2/r_code/etvar')
+setwd(r"(D:\PhD\clanky\cran\etvar)")
+if (requireNamespace("devtools", quietly = TRUE)) devtools::load_all(".")
 library(etvar)
 
 # --- Load data ---
@@ -40,8 +40,9 @@ fit <- etvar(
   constant       = as.logical(example$constant),
   trend          = example$trend,
   shock_index    = 1,
-  start_angles   = theta_start,
-  optimize       = TRUE,     # Set TRUE to re-run optimisation
+  n_starts = 1,
+ # start_angles   = theta_start,
+  optimize       = TRUE,    # Set TRUE to re-run optimisation
   nimp           = 30,
   variable_names = variable_names,
   verbose        = TRUE
@@ -54,7 +55,7 @@ summary(fit)
 # --- Plots via the S3 method ---
 
 # Impulse response functions (normalised by VIX response at horizon 1)
-plot(fit, type = "irfs", scaling_index = c(2, 1, 1))
+plot(fit, type = "irfs", scaling_index = c(2, 1, 1), conf_int = TRUE, conf_level = 0.8)
 
 # Counterfactual vs realised for 1Y Inflation Swap Rate (variable 6)
 plot(fit, type = "counterfactual", variable = 1, n_tail = 40)
@@ -65,7 +66,7 @@ plot(fit, type = "errors", shock = 1, n_tail = 100,
      event_labels = c("Liberation Day", "90-day pause", "China-US truce"))
 
 # Historical decomposition stacked bar charts (all variables)
-plot(fit, type = "hd", n_tail = 41)
+plot(fit, type = "hd", n_tail = 41, variable = 2)
 
 
 # =========================================================================

@@ -40,21 +40,21 @@
 #'   (recommended when no prior solution is available).
 #' @param optimize       Logical. Run the three-stage optimisation? Default
 #'   `TRUE`. Set to `FALSE` when supplying final `start_angles` directly.
-#' @param n_starts       Integer. Number of random starting points for the
-#'   optimiser. Only used when `start_angles = NULL`. A higher number gives
-#'   a better chance of finding the global minimum at the cost of runtime.
-#'   Default 1 (single start from zeros). For new data, 10--50 is recommended.
+#' @param n_starts       Integer. Total number of optimiser starting points.
+#'   Only used when `start_angles = NULL`; the zero vector is always included.
+#'   A higher number gives a better chance of finding the global minimum at the
+#'   cost of runtime. Default 1 (single start from zeros).
 #' @param seed           Integer or `NULL`. Random seed for reproducible
 #'   multi-start draws. Default `NULL`.
-#' @param nimp           Integer. Number of IRF horizons. Default 30.
+#' @param nimp           Integer. Number of IRF horizons, including horizon
+#'   zero. Default 30.
 #' @param variable_names Character vector of length n. Names for each variable.
 #'   If `NULL`, uses column names of `data` or `V1, V2, ...`.
 #' @param control_nm     List. Nelder-Mead control parameters. See [optim()].
 #' @param control_bfgs   List. BFGS control parameters. See [optim()].
 #' @param n_cores        Integer. Number of CPU cores for parallel multi-start
 #'   optimisation. Only used when `start_angles = NULL` and `n_starts > 1`.
-#'   Default 1 (sequential). Set to e.g. `parallel::detectCores() - 1` for
-#'   faster multi-start searches.
+#'   Default 1 (sequential); the maximum is 2.
 #' @param verbose        Logical. Print progress messages? Default `TRUE`.
 #' @return An S3 object of class `"etvar"` containing:
 #'   \describe{
@@ -83,14 +83,12 @@
 #'   }
 #' @export
 #' @examples
-#' \dontrun{
-#' # See inst/examples/replication.R for a full worked example
-#' library(etvar)
-#' fit <- etvar(data, dates, target_date = "2025-04-03", lags = 8)
-#' plot(fit, type = "irfs")
-#' plot(fit, type = "hd")
-#' summary(fit)
-#' }
+#' set.seed(42)
+#' example_data <- matrix(rnorm(160), ncol = 2)
+#' example_dates <- seq.Date(as.Date("2020-01-01"), by = "day", length.out = 80)
+#' fit <- etvar(example_data, example_dates, target_date = example_dates[60],
+#'              lags = 2, optimize = FALSE, verbose = FALSE)
+#' print(fit)
 etvar <- function(data, dates, target_date, lags = 8L,
                   constant = TRUE, trend = 0L, shock_index = 1L,
                   start_angles = NULL, optimize = TRUE,
@@ -104,10 +102,35 @@ etvar <- function(data, dates, target_date, lags = 8L,
                   start_date = NULL, end_date = NULL) {
 
   # --- Input validation ---
-  data         <- as.matrix(data)
-  dates        <- as.Date(dates)
-  target_dates <- as.Date(target_date)
+  data         <- .etvar_numeric_matrix(data)
+  dates        <- .etvar_as_date(dates, "dates")
+  target_dates <- .etvar_as_date(target_date, "target_date")
+  lags <- .etvar_integer_scalar(lags, "lags", min = 1L)
+  constant <- .etvar_flag(constant, "constant")
+  trend <- .etvar_integer_scalar(trend, "trend", min = 0L, max = 2L)
+  shock_index <- .etvar_integer_scalar(shock_index, "shock_index", min = 1L,
+                                        max = ncol(data))
+  optimize <- .etvar_flag(optimize, "optimize")
+  n_starts <- .etvar_integer_scalar(n_starts, "n_starts", min = 1L)
+  nimp <- .etvar_integer_scalar(nimp, "nimp", min = 1L)
+  n_cores <- .etvar_integer_scalar(n_cores, "n_cores", min = 1L, max = 2L)
+  verbose <- .etvar_flag(verbose, "verbose")
+  if (!is.list(control_nm) || !is.list(control_bfgs)) {
+    stop("`control_nm` and `control_bfgs` must be lists.", call. = FALSE)
+  }
+  if (!is.null(seed)) {
+    seed <- .etvar_integer_scalar(seed, "seed", min = 0L,
+                                  max = .Machine$integer.max)
+  }
   n <- ncol(data)
+
+  n_angles <- n * (n - 1L) / 2L
+  if (!is.null(start_angles) &&
+      (!is.numeric(start_angles) || anyNA(start_angles) ||
+       any(!is.finite(start_angles)) || length(start_angles) != n_angles)) {
+    stop("`start_angles` must be a finite numeric vector of length ",
+         n_angles, ".", call. = FALSE)
+  }
 
   if (is.null(variable_names)) {
     variable_names <- if (!is.null(colnames(data))) {
@@ -116,31 +139,39 @@ etvar <- function(data, dates, target_date, lags = 8L,
       paste0("V", seq_len(n))
     }
   }
+  if (!is.character(variable_names) || length(variable_names) != n ||
+      anyNA(variable_names) || any(!nzchar(variable_names))) {
+    stop("`variable_names` must contain one non-empty name per data column.",
+         call. = FALSE)
+  }
 
   if (length(dates) != nrow(data)) {
-    stop("`dates` must have the same length as the number of rows in `data`.")
-  }
-  if (anyNA(dates)) {
-    stop("`dates` cannot contain missing values.")
+    stop("`dates` must have the same length as the number of rows in `data`.",
+         call. = FALSE)
   }
   if (is.unsorted(dates, strictly = TRUE)) {
-    stop("`dates` must be strictly increasing.")
+    stop("`dates` must be strictly increasing.", call. = FALSE)
   }
   if (nrow(data) <= lags) {
-    stop("`data` must contain more rows than `lags`.")
+    stop("`data` must contain more rows than `lags`.", call. = FALSE)
+  }
+  if (anyDuplicated(target_dates)) {
+    stop("`target_date` must not contain duplicate dates.", call. = FALSE)
   }
 
   target_obs <- match(target_dates, dates)
   missing    <- target_dates[is.na(target_obs)]
   if (length(missing) > 0) {
     stop("date(s) not found in `dates`: ",
-         paste(format(missing, "%Y-%m-%d"), collapse = ", "))
+         paste(format(missing, "%Y-%m-%d"), collapse = ", "),
+         call. = FALSE)
   }
   # Sort by date so datestar is anchored at the earliest event
   target_obs   <- sort(target_obs)
   target_dates <- dates[target_obs]
   if (any(target_obs <= lags)) {
-    stop("Target dates must occur after the first `lags` observations.")
+    stop("Target dates must occur after the first `lags` observations.",
+         call. = FALSE)
   }
   datestar     <- length(dates) - target_obs[1]
 
@@ -148,9 +179,10 @@ etvar <- function(data, dates, target_date, lags = 8L,
   parse_date_bound <- function(value, argument, default) {
     if (is.null(value)) return(default)
 
-    parsed <- as.Date(value)
+    parsed <- tryCatch(as.Date(value), error = function(e) as.Date(NA))
     if (length(parsed) != 1L || is.na(parsed)) {
-      stop("`", argument, "` must be one non-missing date or `NULL`.")
+      stop("`", argument, "` must be one non-missing date or `NULL`.",
+           call. = FALSE)
     }
     parsed
   }
@@ -160,7 +192,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
   end_date <- parse_date_bound(end_date, "end_date",
                                effective_dates[length(effective_dates)])
   if (start_date > end_date) {
-    stop("`start_date` must be on or before `end_date`.")
+    stop("`start_date` must be on or before `end_date`.", call. = FALSE)
   }
 
   estimation_rows <- which(
@@ -168,7 +200,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
   )
   if (length(estimation_rows) == 0L) {
     stop("No effective-sample observations fall between `start_date` and ",
-         "`end_date`.")
+         "`end_date`.", call. = FALSE)
   }
   estimation_dates <- effective_dates[estimation_rows]
 
@@ -180,7 +212,8 @@ etvar <- function(data, dates, target_date, lags = 8L,
         " (", length(estimation_dates), " observations) ...\n", sep = "")
   }
   var_est <- estimate_var(data, lags = lags, constant = constant,
-                          trend = trend, estimation_rows = estimation_rows)
+                          trend = trend, nimp_wold = nimp,
+                          estimation_rows = estimation_rows)
   var_est$estimation_dates <- estimation_dates
   var_est$estimation_start_date <- estimation_dates[1L]
   var_est$estimation_end_date <- estimation_dates[length(estimation_dates)]
@@ -192,7 +225,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
   if (optimize) {
     if (verbose) cat("Optimising rotation angles ...\n")
     opt <- etvar_optimize(
-      start        = start_angles,   # NULL triggers multi-start in etvar_optimize
+      start        = start_angles,
       var_est      = var_est,
       target_obs   = target_eff,
       shock_index  = shock_index,
@@ -298,15 +331,15 @@ print.etvar <- function(x, ...) {
 #' @export
 summary.etvar <- function(object, ...) {
   cat("========================================\n")
-  cat("Event-Targeted VAR — Summary\n")
+  cat("Event-Targeted VAR - Summary\n")
   cat("========================================\n\n")
 
   cat("Model specification:\n")
   cat("  Variables (n):", object$var$n, "\n")
   cat("  Lags (p):     ", object$var$lags, "\n")
   cat("  Constant:     ", ifelse(object$var$constant, "Yes", "No"), "\n")
-  cat("  Trend:        ", c("None", "Linear", "Quadratic")[object$var$trend + 1],
-      "\n")
+  trend_label <- c("None", "Linear", "Quadratic")[object$var$trend + 1L]
+  cat("  Trend:        ", trend_label, "\n")
   cat("  T (raw):      ", nrow(object$data), "\n")
   cat("  T (effective):", nrow(object$var$Y), "\n")
   if (!is.null(object$var$estimation_start_date)) {
@@ -335,9 +368,10 @@ summary.etvar <- function(object, ...) {
     cat("  ", i, ". ", object$variable_names[i], "\n", sep = "")
   }
 
-  cat("\nMax companion eigenvalue:",
-      round(max(abs(eigen(object$var$companion, only.values = TRUE)$values)), 4),
-      "\n")
+  max_eigenvalue <- max(abs(
+    eigen(object$var$companion, only.values = TRUE)$values
+  ))
+  cat("\nMax companion eigenvalue:", round(max_eigenvalue, 4), "\n")
 
   invisible(object)
 }
@@ -360,8 +394,8 @@ summary.etvar <- function(object, ...) {
 #'   }
 #' @param variable Integer. For `type = "counterfactual"`, which variable
 #'   to display. Default 1.
-#' @param shock    Integer. For `type = "errors"`, which shock to display.
-#'   Default: the target shock.
+#' @param shock    Integer. Shock to display for IRF, counterfactual, and error
+#'   plots. Default: the target shock.
 #' @param scaling_index Numeric vector for `type = "irfs"`. See
 #'   [plot_etvar_irfs()].
 #' @param scaling_multiplier Numeric scalar for `type = "irfs"`. Applied
@@ -426,8 +460,15 @@ plot.etvar <- function(x, type = c("irfs", "hd", "counterfactual", "errors"),
                                                        alpha.f = 0.45),
                        ci_border = NA,
                        ...) {
+  if (!inherits(x, "etvar")) {
+    stop("`x` must be an `etvar` object.", call. = FALSE)
+  }
   type <- match.arg(type)
   if (is.null(shock)) shock <- x$shock_index
+  shock <- .etvar_integer_scalar(shock, "shock", min = 1L, max = x$var$n)
+  variable <- .etvar_integer_scalar(variable, "variable",
+                                     min = 1L, max = x$var$n)
+  conf_int <- .etvar_flag(conf_int, "conf_int")
 
   switch(type,
     irfs = {

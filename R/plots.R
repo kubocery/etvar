@@ -3,7 +3,7 @@
 # ==============================================================================
 
 # Suppress R CMD check NOTEs for ggplot2 NSE columns
-utils::globalVariables(c("Value", "Series", "Tariff_err", "dates"))
+utils::globalVariables(c("Value", "Series", "Structural_error", "dates"))
 
 etvar_select_panel_title <- function(title, default_titles, variable_index,
                                      panel_index = variable_index,
@@ -79,22 +79,41 @@ etvar_select_scalar_title <- function(title, default_title, arg = "title") {
 #'   Default `"1 week"`.
 #' @param title    Character. Plot title. Default `""`.
 #' @param ylab     Character. Y-axis label. Default `""`.
+#' @param legend_position Legend position passed to [ggplot2::theme()]. Default
+#'   `"right"`.
 #' @return A [ggplot2::ggplot] object.
 #' @export
 plot_etvar_counterfactual <- function(date_vec, realized, counterfactual,
                                       n_tail = 40L,
                                       x_date_breaks = "1 week",
                                       title = "", ylab = "",
-                                      legend_position = c(0.75, 0.2)) {
-  plot_df <- data.frame(
-    dates          = utils::tail(date_vec, n_tail),
-    Counterfactual = as.double(utils::tail(counterfactual, n_tail)),
-    Realized       = as.double(utils::tail(realized, n_tail))
-  )
+                                      legend_position = "right") {
+  date_vec <- .etvar_as_date(date_vec, "date_vec")
+  n_tail <- .etvar_integer_scalar(n_tail, "n_tail", min = 1L)
+  if (!is.numeric(realized) || !is.numeric(counterfactual) ||
+      length(realized) != length(date_vec) ||
+      length(counterfactual) != length(date_vec) ||
+      anyNA(realized) || anyNA(counterfactual) ||
+      any(!is.finite(realized)) || any(!is.finite(counterfactual))) {
+    stop("`realized` and `counterfactual` must be finite numeric vectors ",
+         "with the same length as `date_vec`.", call. = FALSE)
+  }
+  if (!is.character(x_date_breaks) || length(x_date_breaks) != 1L ||
+      is.na(x_date_breaks) || !nzchar(x_date_breaks)) {
+    stop("`x_date_breaks` must be a non-empty character scalar.",
+         call. = FALSE)
+  }
+  title <- etvar_select_scalar_title(title, "")
+  ylab <- etvar_select_scalar_title(ylab, "", arg = "ylab")
 
-  plot_long <- tidyr::pivot_longer(
-    plot_df, cols = c("Counterfactual", "Realized"),
-    names_to = "Series", values_to = "Value"
+  selected_dates <- utils::tail(date_vec, n_tail)
+  selected_counterfactual <- as.double(utils::tail(counterfactual, n_tail))
+  selected_realized <- as.double(utils::tail(realized, n_tail))
+  plot_long <- data.frame(
+    dates = rep(selected_dates, times = 2L),
+    Series = rep(c("Counterfactual", "Realized"),
+                 each = length(selected_dates)),
+    Value = c(selected_counterfactual, selected_realized)
   )
 
   ggplot2::ggplot(plot_long,
@@ -139,12 +158,36 @@ plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
                                event_dates = NULL, event_labels = NULL,
                                x_date_breaks = "1 week",
                                title = "Structural error") {
+  date_vec <- .etvar_as_date(date_vec, "date_vec")
+  n_tail <- .etvar_integer_scalar(n_tail, "n_tail", min = 1L)
+  if (!is.numeric(errors) || length(errors) != length(date_vec) ||
+      anyNA(errors) || any(!is.finite(errors))) {
+    stop("`errors` must be a finite numeric vector with the same length as ",
+         "`date_vec`.", call. = FALSE)
+  }
+  if (!is.character(x_date_breaks) || length(x_date_breaks) != 1L ||
+      is.na(x_date_breaks) || !nzchar(x_date_breaks)) {
+    stop("`x_date_breaks` must be a non-empty character scalar.",
+         call. = FALSE)
+  }
+  title <- etvar_select_scalar_title(title, "Structural error")
+  if (!is.null(event_dates)) {
+    event_dates <- .etvar_as_date(event_dates, "event_dates")
+  }
+  if (!is.null(event_labels) &&
+      (!is.character(event_labels) || length(event_labels) != length(event_dates) ||
+       anyNA(event_labels))) {
+    stop("`event_labels` must contain one non-missing label per event date.",
+         call. = FALSE)
+  }
+
   plot_df <- data.frame(
-    dates      = utils::tail(date_vec, n_tail),
-    Tariff_err = utils::tail(errors, n_tail)
+    dates            = utils::tail(date_vec, n_tail),
+    Structural_error = utils::tail(errors, n_tail)
   )
 
-  pl <- ggplot2::ggplot(plot_df, ggplot2::aes(x = dates, y = Tariff_err)) +
+  pl <- ggplot2::ggplot(plot_df,
+                        ggplot2::aes(x = dates, y = Structural_error)) +
     ggplot2::geom_hline(yintercept = 0, linetype = "dashed",
                         color = "gray55", linewidth = 0.5) +
     ggplot2::geom_line(linewidth = 0.8) +
@@ -163,14 +206,16 @@ plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
       xintercept = event_dates, linetype = "dashed",
       linewidth = 0.6, color = "red"
     )
-    n_evt <- min(length(event_dates), length(event_labels))
-    for (k in seq_len(n_evt)) {
-      vj <- if (k <= n_evt / 2) -0.5 else 1.5
-      yi <- if (k <= n_evt / 2) -Inf else Inf
-      pl <- pl + ggplot2::annotate(
-        "text", x = event_dates[k], y = yi,
-        label = event_labels[k], hjust = 1.05, vjust = vj, size = 3
-      )
+    if (!is.null(event_labels)) {
+      n_evt <- length(event_dates)
+      for (k in seq_len(n_evt)) {
+        vj <- if (k <= n_evt / 2) -0.5 else 1.5
+        yi <- if (k <= n_evt / 2) -Inf else Inf
+        pl <- pl + ggplot2::annotate(
+          "text", x = event_dates[k], y = yi,
+          label = event_labels[k], hjust = 1.05, vjust = vj, size = 3
+        )
+      }
     }
   }
 
@@ -222,13 +267,30 @@ plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
                              ci_col = grDevices::adjustcolor("gray70",
                                                              alpha.f = 0.45),
                              ci_border = NA) {
+  irfs <- .etvar_numeric_array(irfs, "irfs")
+  if (length(dim(irfs)) != 3L || dim(irfs)[1L] != dim(irfs)[2L]) {
+    stop("`irfs` must be an n by n by h numeric array.", call. = FALSE)
+  }
   n <- length(variable_names)
+  if (!is.character(variable_names) || n != dim(irfs)[1L] ||
+      anyNA(variable_names) || any(!nzchar(variable_names))) {
+    stop("`variable_names` must contain one non-empty name per variable.",
+         call. = FALSE)
+  }
+  shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
+                                        min = 1L, max = n)
   if (is.null(variables)) variables <- seq_len(n)
+  variables <- .etvar_index_vector(variables, "variables", n)
   n_plot <- length(variables)
+  if (!is.numeric(scaling_multiplier) || length(scaling_multiplier) != 1L ||
+      is.na(scaling_multiplier) || !is.finite(scaling_multiplier)) {
+    stop("`scaling_multiplier` must be one finite number.", call. = FALSE)
+  }
+  common_ylim <- .etvar_flag(common_ylim, "common_ylim")
 
   if (!is.null(conf_int) &&
       (!is.logical(conf_int) || length(conf_int) != 1L || is.na(conf_int))) {
-    stop("`conf_int` must be TRUE, FALSE, or NULL.")
+    stop("`conf_int` must be TRUE, FALSE, or NULL.", call. = FALSE)
   }
 
   draw_ci <- if (is.null(conf_int)) !is.null(irf_ci) else isTRUE(conf_int)
@@ -241,23 +303,39 @@ plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
 
   if (draw_ci) {
     if (!is.list(irf_ci) || is.null(irf_ci$lower) || is.null(irf_ci$upper)) {
-      stop("`irf_ci` must be a list with `lower` and `upper` arrays.")
+      stop("`irf_ci` must be a list with `lower` and `upper` arrays.",
+           call. = FALSE)
     }
     if (!identical(dim(irf_ci$lower), dim(irfs)) ||
         !identical(dim(irf_ci$upper), dim(irfs))) {
       stop("`irf_ci$lower` and `irf_ci$upper` must have the same dimensions ",
-           "as `irfs`.")
+           "as `irfs`.", call. = FALSE)
     }
+    .etvar_numeric_array(irf_ci$lower, "irf_ci$lower", dim(irfs))
+    .etvar_numeric_array(irf_ci$upper, "irf_ci$upper", dim(irfs))
   }
 
   scaling_factor <- if (!is.null(scaling_index)) {
+    scaling_index <- .etvar_index_vector(
+      scaling_index, "scaling_index", max(dim(irfs))
+    )
+    if (length(scaling_index) != 3L ||
+        any(scaling_index > dim(irfs))) {
+      stop("`scaling_index` must contain valid variable, shock, and horizon ",
+           "indices.", call. = FALSE)
+    }
     irfs[scaling_index[1], scaling_index[2], scaling_index[3]]
   } else {
     1
   }
+  if (!is.finite(scaling_factor) ||
+      abs(scaling_factor) <= sqrt(.Machine$double.eps)) {
+    stop("The IRF selected by `scaling_index` is zero or too close to zero.",
+         call. = FALSE)
+  }
 
   old_par <- graphics::par(no.readonly = TRUE)
-  on.exit(graphics::par(old_par))
+  on.exit(graphics::par(old_par), add = TRUE)
 
   nr <- ceiling(n_plot / 2)
   graphics::par(mfrow = c(nr, 2), mar = c(4, 4, 3, 1))
@@ -279,7 +357,11 @@ plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
     y_min <- min(0, min(all_vals, na.rm = TRUE))
     y_max <- max(0, max(all_vals, na.rm = TRUE))
     y_span <- y_max - y_min
-    y_pad <- if (isTRUE(all.equal(y_span, 0))) max(abs(y_max), 1) * 0.1 else y_span * 0.1
+    y_pad <- if (isTRUE(all.equal(y_span, 0))) {
+      max(abs(y_max), 1) * 0.1
+    } else {
+      y_span * 0.1
+    }
     y_limits_common <- c(y_min - y_pad, y_max + y_pad)
   }
 
@@ -309,7 +391,11 @@ plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
       y_min_i <- min(0, min(panel_vals, na.rm = TRUE))
       y_max_i <- max(0, max(panel_vals, na.rm = TRUE))
       y_span_i <- y_max_i - y_min_i
-      y_pad_i <- if (isTRUE(all.equal(y_span_i, 0))) max(abs(y_max_i), 1) * 0.1 else y_span_i * 0.1
+      y_pad_i <- if (isTRUE(all.equal(y_span_i, 0))) {
+        max(abs(y_max_i), 1) * 0.1
+      } else {
+        y_span_i * 0.1
+      }
       y_limits <- c(y_min_i - y_pad_i, y_max_i + y_pad_i)
     }
 
@@ -321,7 +407,7 @@ plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
       n_panels       = n_plot
     )
 
-    horizons <- seq_along(med_vals)
+    horizons <- seq_along(med_vals) - 1L
     graphics::plot(horizons, med_vals, type = "n",
                    ylim = y_limits, xlab = "Horizon", ylab = "",
                    main = panel_title,
@@ -376,8 +462,8 @@ plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
 #' @param shock_labels     Character vector of length 3. Labels for the three
 #'   bar components. Default: `c("Event shock", "Continued shocks",
 #'   "Other shocks")`.
-#' @param open_device Logical. Open a new graphics device per variable?
-#'   Default `FALSE`. Set to `TRUE` to open separate windows.
+#' @param open_device Logical. Open a new graphics device before plotting?
+#'   Default `FALSE`.
 #' @param ask Logical. If `TRUE` and multiple variables are plotted in
 #'   the current device, prompt the user before advancing to the next plot.
 #'   Default `interactive()`.
@@ -394,8 +480,44 @@ plot_etvar_hd <- function(date_vec, data, deterministic, target_stop,
                                             "Other shocks"),
                            open_device = FALSE,
                            ask = interactive()) {
-  T_obs      <- nrow(data)
-  n          <- ncol(data)
+  date_vec <- .etvar_as_date(date_vec, "date_vec")
+  data <- .etvar_numeric_matrix(data)
+  T_obs <- nrow(data)
+  n <- ncol(data)
+  if (length(date_vec) != T_obs) {
+    stop("`date_vec` must contain one date per row of `data`.", call. = FALSE)
+  }
+  expected_dim <- c(T_obs, n)
+  deterministic <- .etvar_numeric_matrix(deterministic, "deterministic")
+  target_stop <- .etvar_numeric_matrix(target_stop, "target_stop")
+  target_rest <- .etvar_numeric_matrix(target_rest, "target_rest")
+  others <- .etvar_numeric_matrix(others, "others")
+  matrices <- list(deterministic = deterministic, target_stop = target_stop,
+                   target_rest = target_rest, others = others)
+  if (any(!vapply(matrices, function(x) identical(dim(x), expected_dim),
+                  logical(1)))) {
+    stop("Decomposition matrices must have the same dimensions as `data`.",
+         call. = FALSE)
+  }
+  if (!is.character(variable_names) || length(variable_names) != n ||
+      anyNA(variable_names) || any(!nzchar(variable_names))) {
+    stop("`variable_names` must contain one non-empty name per variable.",
+         call. = FALSE)
+  }
+  datestar <- .etvar_integer_scalar(datestar, "datestar", min = 0L,
+                                    max = T_obs - 1L)
+  n_tail <- .etvar_integer_scalar(n_tail, "n_tail", min = 1L)
+  x_break_every <- .etvar_integer_scalar(x_break_every, "x_break_every",
+                                          min = 1L)
+  merge_target_components <- .etvar_flag(merge_target_components,
+                                          "merge_target_components")
+  open_device <- .etvar_flag(open_device, "open_device")
+  ask <- .etvar_flag(ask, "ask")
+  if (!is.character(shock_labels) || length(shock_labels) != 3L ||
+      anyNA(shock_labels) || any(!nzchar(shock_labels))) {
+    stop("`shock_labels` must contain three non-empty labels.", call. = FALSE)
+  }
+
   bar_colors <- c("#4DBEEE", "#D95319", "#EDB120")
 
   start_idx  <- max(1, T_obs - n_tail + 1)
@@ -407,6 +529,9 @@ plot_etvar_hd <- function(date_vec, data, deterministic, target_stop,
     grDevices::dev.new(width = 10, height = 6, noRStudioGD = TRUE)
   }
 
+  old_par <- graphics::par(no.readonly = TRUE)
+  on.exit(graphics::par(old_par), add = TRUE)
+
   if (!open_device && n > 1L && ask) {
     old_ask <- grDevices::devAskNewPage(TRUE)
     on.exit(grDevices::devAskNewPage(old_ask), add = TRUE)
@@ -416,8 +541,10 @@ plot_etvar_hd <- function(date_vec, data, deterministic, target_stop,
     graphics::par(mar = c(7, 5, 4, 2) + 0.1)
 
     if (merge_target_components) {
-      raw_matrix <- t(cbind(target_stop[plot_idx, i] + target_rest[plot_idx, i],
-                            others[plot_idx, i]))
+      raw_matrix <- t(cbind(
+        target_stop[plot_idx, i] + target_rest[plot_idx, i],
+        others[plot_idx, i]
+      ))
       bar_labels <- c("Target shock", "Other shocks")
       if (length(shock_labels) >= 2L) {
         bar_labels <- c(shock_labels[1], shock_labels[length(shock_labels)])
@@ -431,14 +558,22 @@ plot_etvar_hd <- function(date_vec, data, deterministic, target_stop,
       bar_colors_i <- bar_colors
     }
 
-    data_pos <- raw_matrix; data_pos[data_pos < 0] <- 0
-    data_neg <- raw_matrix; data_neg[data_neg > 0] <- 0
+    data_pos <- raw_matrix
+    data_pos[data_pos < 0] <- 0
+    data_neg <- raw_matrix
+    data_neg[data_neg > 0] <- 0
 
     line_values <- data[plot_idx, i] - deterministic[plot_idx, i]
 
     y_max   <- max(c(colSums(data_pos), line_values), na.rm = TRUE)
     y_min   <- min(c(colSums(data_neg), line_values), na.rm = TRUE)
-    my_ylim <- c(y_min, y_max) * 1.2
+    if (isTRUE(all.equal(y_min, y_max))) {
+      y_pad <- max(abs(y_min), 1) * 0.1
+      my_ylim <- c(y_min - y_pad, y_max + y_pad)
+    } else {
+      y_pad <- (y_max - y_min) * 0.1
+      my_ylim <- c(y_min - y_pad, y_max + y_pad)
+    }
 
     bp <- graphics::barplot(data_pos, col = bar_colors_i, border = NA,
                             space = 0.2, ylab = "", xlab = "", main = "",

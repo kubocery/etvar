@@ -21,22 +21,22 @@
 #' @param target_obs Integer or integer vector. Row index (indices) of the
 #'   event date(s) in the effective sample. See [etvar_objective()].
 #' @param shock_index Integer. Which structural shock to target. Default 1.
-#' @param n_starts Integer. Number of random starting points. Only used when
-#'   `start = NULL`. The zero vector is always included as one of the starts.
-#'   Default 1 (no random starts, just zeros).
+#' @param n_starts Integer. Total number of starting points. Only used when
+#'   `start = NULL`. The zero vector is included, with the remaining starts
+#'   drawn at random. Default 1 (only the zero vector).
 #' @param seed Integer or `NULL`. Random seed for reproducible multi-start
 #'   draws. Default `NULL` (no seed set).
 #' @param control_nm   List. Control parameters for Nelder-Mead. See [optim()].
 #' @param control_bfgs List. Control parameters for BFGS. See [optim()].
 #' @param n_cores Integer. Number of CPU cores for parallel execution. Only
 #'   used when multiple starts are generated (`start = NULL` and
-#'   `n_starts > 1`). Default 1 (sequential). On Windows a PSOCK cluster is
-#'   used; on Unix-like systems forking via [parallel::mclapply()] is used.
+#'   `n_starts > 1`). Default 1 (sequential); the maximum is 2 to respect CRAN
+#'   resource limits. On Windows a PSOCK cluster is used; on Unix-like systems
+#'   forking via [parallel::mclapply()] is used.
 #' @param verbose Logical. Print progress messages? Default `TRUE`.
-#' @return Named list with `par` (optimal angles), `value` (final objective),
-#'   and `convergence` (0 = success).
-#' @importFrom parallel makeCluster stopCluster clusterExport
-#'   parLapply mclapply
+#' @return Named list with `par` (optimal angles), `value` (best objective),
+#'   `convergence` (0 indicates successful convergence), and `stage` (the
+#'   optimisation stage that produced the best value).
 #' @export
 etvar_optimize <- function(start = NULL, var_est, target_obs,
                            shock_index = 1L,
@@ -47,8 +47,32 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
                                                trace = 0, REPORT = 1),
                            n_cores = 1L,
                            verbose = TRUE) {
+  if (!inherits(var_est, "etvar_var")) {
+    stop("`var_est` must be an `etvar_var` object from `estimate_var()`.",
+         call. = FALSE)
+  }
   n      <- var_est$n
   n_ang  <- n * (n - 1) / 2
+  shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
+                                        min = 1L, max = n)
+  target_obs <- .etvar_index_vector(target_obs, "target_obs", nrow(var_est$Y))
+  n_starts <- .etvar_integer_scalar(n_starts, "n_starts", min = 1L)
+  n_cores <- .etvar_integer_scalar(n_cores, "n_cores", min = 1L, max = 2L)
+  verbose <- .etvar_flag(verbose, "verbose")
+  if (!is.list(control_nm) || !is.list(control_bfgs)) {
+    stop("`control_nm` and `control_bfgs` must be lists.", call. = FALSE)
+  }
+  if (!is.null(seed)) {
+    seed <- .etvar_integer_scalar(seed, "seed", min = 0L,
+                                  max = .Machine$integer.max)
+  }
+  if (!is.null(start)) {
+    if (!is.numeric(start) || anyNA(start) || any(!is.finite(start)) ||
+        length(start) != n_ang) {
+      stop("`start` must be a finite numeric vector of length ", n_ang, ".",
+           call. = FALSE)
+    }
+  }
 
   # --- Generate starting point(s) ---
   if (is.null(start) && n_starts > 1L) {
@@ -75,7 +99,21 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
                          control = control_bfgs)
     opt3 <- stats::optim(opt2$par, obj_fn, method = "Nelder-Mead",
                          control = control_nm)
-    list(par = opt3$par, value = opt3$value, convergence = opt3$convergence)
+    candidates <- list(stage1 = opt1, stage2 = opt2, stage3 = opt3)
+    values <- vapply(candidates, function(x) x$value, numeric(1))
+    best_stage <- which.min(values)
+    best <- candidates[[best_stage]]
+    list(par = best$par, value = best$value,
+         convergence = best$convergence, stage = names(candidates)[best_stage])
+  }
+
+  if (n_ang == 0L) {
+    return(list(
+      par = numeric(),
+      value = etvar_objective(numeric(), var_est, target_obs, shock_index),
+      convergence = 0L,
+      stage = "none"
+    ))
   }
 
   # --- Parallel multi-start ---
@@ -134,23 +172,13 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     }
 
   } else {
-    # --- Sequential execution (original behaviour) ---
-
-    # When verbose, enable optim() tracing unless the user explicitly set trace
-    if (verbose) {
-      if (is.null(control_nm$trace)   || control_nm$trace   == 0)
-        control_nm$trace   <- 1
-      if (is.null(control_bfgs$trace) || control_bfgs$trace == 0)
-        control_bfgs$trace <- 1
-      if (is.null(control_bfgs$REPORT))
-        control_bfgs$REPORT <- 1
-    }
+    # --- Sequential execution ---
 
     obj_fn <- function(theta) {
       etvar_objective(theta, var_est, target_obs, shock_index)
     }
 
-    best <- list(par = NULL, value = Inf, convergence = 1L)
+    best <- list(par = NULL, value = Inf, convergence = 1L, stage = NA_character_)
 
     for (s in seq_along(starts)) {
       init <- starts[[s]]
@@ -173,13 +201,23 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
                             control = control_nm)
       if (verbose) {
         cat("  Final objective:", opt3$value, "\n")
-        cat("  Convergence:",
-            ifelse(opt3$convergence == 0, "Success", "Warning"), "\n")
       }
 
-      if (opt3$value < best$value) {
-        best <- list(par = opt3$par, value = opt3$value,
-                     convergence = opt3$convergence)
+      candidates <- list(stage1 = opt1, stage2 = opt2, stage3 = opt3)
+      values <- vapply(candidates, function(x) x$value, numeric(1))
+      best_stage <- which.min(values)
+      candidate <- candidates[[best_stage]]
+
+      if (verbose) {
+        cat("  Selected stage:", best_stage, "\n")
+        cat("  Selected convergence:",
+            ifelse(candidate$convergence == 0, "Success", "Warning"), "\n")
+      }
+
+      if (candidate$value < best$value) {
+        best <- list(par = candidate$par, value = candidate$value,
+                     convergence = candidate$convergence,
+                     stage = names(candidates)[best_stage])
       }
     }
 

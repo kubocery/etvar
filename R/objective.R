@@ -25,12 +25,20 @@
 #'   (lower is better).
 #' @export
 etvar_objective <- function(theta, var_est, target_obs, shock_index = 1L) {
+  if (!inherits(var_est, "etvar_var")) {
+    stop("`var_est` must be an `etvar_var` object from `estimate_var()`.",
+         call. = FALSE)
+  }
+
   SIGMA <- var_est$SIGMA
   data  <- var_est$data
   n     <- var_est$n
+  shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
+                                        min = 1L, max = n)
+  target_obs <- .etvar_index_vector(target_obs, "target_obs", nrow(var_est$Y))
 
   R_mat <- euler_rotation(theta, n)
-  A0    <- t(chol(SIGMA)) %*% R_mat
+  A0    <- -t(chol(SIGMA)) %*% R_mat
 
   decomp <- hist_decomposition(
     A0       = A0,
@@ -54,8 +62,16 @@ etvar_objective <- function(theta, var_est, target_obs, shock_index = 1L) {
   CF_diff   <- diff(CF_data)
   real_diff <- diff(data)
 
-  sc   <- apply(real_diff, 2, sd)
-  idx  <- target_obs - 1L  # diff() loses one observation
+  sc <- apply(real_diff, 2, stats::sd)
+  if (any(!is.finite(sc)) || any(sc <= sqrt(.Machine$double.eps))) {
+    stop("Every variable must have non-zero finite first-difference ",
+         "variability.", call. = FALSE)
+  }
+
+  # `target_obs` indexes the effective sample, whereas `diff(data)` indexes
+  # changes in the raw sample. Add the lag offset, then account for the row
+  # removed by `diff()`.
+  idx <- target_obs + var_est$lags - 1L
 
   lib_CF   <- CF_diff[idx, , drop = FALSE]
   lib_real <- real_diff[idx, , drop = FALSE]

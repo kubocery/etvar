@@ -12,7 +12,7 @@
 #' @return Matrix ((T - lags) x n).
 #' @keywords internal
 trim_to_effective <- function(data, lags) {
-  data[(lags + 1):nrow(data), , drop = FALSE]
+  data[seq.int(lags + 1L, nrow(data)), , drop = FALSE]
 }
 
 #' Build the VAR regressor matrix
@@ -32,18 +32,19 @@ trim_to_effective <- function(data, lags) {
 build_var_regressors <- function(data, Tr, n, lags, trend, constant) {
   Ylag <- matrix(0, nrow = Tr, ncol = n * lags)
 
-  for (i in 1:lags) {
+  for (i in seq_len(lags)) {
     col_start <- n * (i - 1) + 1
     col_end   <- n * i
     src_start <- lags + 1 - i
     src_end   <- Tr - i
-    Ylag[(lags + 1):Tr, col_start:col_end] <- data[src_start:src_end, 1:n]
+    Ylag[seq.int(lags + 1L, Tr), col_start:col_end] <-
+      data[src_start:src_end, seq_len(n), drop = FALSE]
   }
 
-  Ylag_trimmed <- Ylag[(lags + 1):Tr, , drop = FALSE]
+  Ylag_trimmed <- Ylag[seq.int(lags + 1L, Tr), , drop = FALSE]
   T_eff        <- Tr - lags
   ones_vec     <- matrix(1, nrow = T_eff, ncol = 1)
-  tt           <- matrix(1:T_eff, ncol = 1)
+  tt           <- matrix(seq_len(T_eff), ncol = 1)
   tt2          <- tt^2
 
   if (constant == 1) {
@@ -56,7 +57,7 @@ build_var_regressors <- function(data, Tr, n, lags, trend, constant) {
     else                 Xlag <- Ylag_trimmed
   }
 
-  return(Xlag)
+  Xlag
 }
 
 #' Build the VAR companion matrix
@@ -90,7 +91,7 @@ build_companion <- function(ALPHA, n, lags, constant, trend) {
 #' @param BB    Matrix (nL x nL). Companion matrix.
 #' @param SIGMA Matrix (n x n). Reduced-form error covariance.
 #' @param n     Integer. Number of endogenous variables.
-#' @param nimp  Integer. Number of horizons.
+#' @param nimp  Integer. Number of horizons, including horizon zero.
 #' @return Named list with `wimpu` (companion powers) and `cimpu` (Cholesky IRFs).
 #' @keywords internal
 compute_wold <- function(BB, SIGMA, n, nimp) {
@@ -100,7 +101,7 @@ compute_wold <- function(BB, SIGMA, n, nimp) {
   cimpu      <- array(0, dim = c(n, n, nimp))
   chol_lower <- t(chol(SIGMA))
 
-  for (j in 1:nimp) {
+  for (j in seq_len(nimp)) {
     wimpu[, , j] <- if (j == 1) diag(rows_bb) else wimpu[, , j - 1] %*% BB
     cimpu[, , j] <- wimpu[1:n, 1:n, j] %*% chol_lower
   }
@@ -156,10 +157,18 @@ compute_wold <- function(BB, SIGMA, n, nimp) {
 #' var_est$n
 estimate_var <- function(data, lags, constant = TRUE, trend = 0,
                          nimp_wold = 100, estimation_rows = NULL) {
+  data      <- .etvar_numeric_matrix(data)
+  lags      <- .etvar_integer_scalar(lags, "lags", min = 1L)
+  constant  <- .etvar_flag(constant, "constant")
   const_int <- as.integer(constant)
-  data      <- as.matrix(data)
+  trend     <- .etvar_integer_scalar(trend, "trend", min = 0L, max = 2L)
+  nimp_wold <- .etvar_integer_scalar(nimp_wold, "nimp_wold", min = 1L)
   Tr        <- nrow(data)
   n         <- ncol(data)
+
+  if (Tr <= lags) {
+    stop("`data` must contain more rows than `lags`.", call. = FALSE)
+  }
 
   Y <- trim_to_effective(data, lags)
   X <- build_var_regressors(data, Tr, n, lags, trend, const_int)
@@ -171,18 +180,20 @@ estimate_var <- function(data, lags, constant = TRUE, trend = 0,
   } else if (is.logical(estimation_rows)) {
     if (length(estimation_rows) != Tr_eff || anyNA(estimation_rows)) {
       stop("Logical `estimation_rows` must have one non-missing value ",
-           "per effective-sample row.")
+           "per effective-sample row.", call. = FALSE)
     }
     estimation_rows <- which(estimation_rows)
   } else {
     if (!is.numeric(estimation_rows) || anyNA(estimation_rows) ||
         any(!is.finite(estimation_rows)) ||
         any(estimation_rows != as.integer(estimation_rows))) {
-      stop("`estimation_rows` must contain finite, non-missing row indices.")
+      stop("`estimation_rows` must contain finite, non-missing row indices.",
+           call. = FALSE)
     }
     estimation_rows <- sort(unique(as.integer(estimation_rows)))
     if (any(estimation_rows < 1L | estimation_rows > Tr_eff)) {
-      stop("`estimation_rows` contains indices outside the effective sample.")
+      stop("`estimation_rows` contains indices outside the effective sample.",
+           call. = FALSE)
     }
   }
 
@@ -193,10 +204,12 @@ estimate_var <- function(data, lags, constant = TRUE, trend = 0,
 
   if (dof <= 0L) {
     stop("The VAR estimation window must contain more usable observations ",
-         "than coefficients per equation (", n_parameters, ").")
+         "than coefficients per equation (", n_parameters, ").",
+         call. = FALSE)
   }
   if (qr(X_est)$rank < n_parameters) {
-    stop("The VAR regressor matrix is rank deficient in the estimation window.")
+    stop("The VAR regressor matrix is rank deficient in the estimation window.",
+         call. = FALSE)
   }
 
   ALPHA    <- qr.solve(X_est, Y_est)
@@ -205,7 +218,15 @@ estimate_var <- function(data, lags, constant = TRUE, trend = 0,
   sse       <- t(resid_est) %*% resid_est
   SIGMA <- sse / as.numeric(dof)
 
-  eps <- resid %*% solve(chol(SIGMA))
+  chol_sigma <- tryCatch(
+    chol(SIGMA),
+    error = function(e) {
+      stop("The estimated innovation covariance matrix is not positive ",
+           "definite. Use a longer estimation window or remove collinear ",
+           "variables.", call. = FALSE)
+    }
+  )
+  eps <- resid %*% solve(chol_sigma)
 
   BB   <- build_companion(ALPHA, n, lags, const_int, trend)
   wold <- compute_wold(BB, SIGMA, n, nimp_wold)

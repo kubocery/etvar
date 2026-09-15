@@ -10,12 +10,24 @@
 #'
 #' @param var_est An `etvar_var` object from [estimate_var()].
 #' @param A0      Matrix (n x n). Structural impact matrix.
-#' @param nimp    Integer. Number of impulse-response horizons. Default 30.
+#' @param nimp    Integer. Number of impulse-response horizons, including
+#'   horizon zero. Default 30.
 #' @return Array (n x n x nimp) where element `[i, j, h]` is the response
-#'         of variable `i` to structural shock `j` at horizon `h`.
+#'         of variable `i` to structural shock `j` at array position `h`;
+#'         position 1 is horizon zero.
 #' @export
 compute_structural_irfs <- function(var_est, A0, nimp = 30L) {
+  if (!inherits(var_est, "etvar_var")) {
+    stop("`var_est` must be an `etvar_var` object from `estimate_var()`.",
+         call. = FALSE)
+  }
   n    <- var_est$n
+  nimp <- .etvar_integer_scalar(nimp, "nimp", min = 1L,
+                                max = dim(var_est$wimpu)[3L])
+  A0 <- .etvar_numeric_matrix(A0, "A0")
+  if (!identical(dim(A0), c(n, n))) {
+    stop("`A0` must be an `n` by `n` matrix.", call. = FALSE)
+  }
   irfs <- array(0, dim = c(n, n, nimp))
 
   for (j in seq_len(nimp)) {
@@ -110,20 +122,16 @@ compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
     stop("`level` must be a numeric scalar between 0 and 1.")
   }
 
-  n_boot <- as.integer(n_boot)
-  if (is.na(n_boot) || n_boot < 1L) {
-    stop("`n_boot` must be a positive integer.")
-  }
+  n_boot <- .etvar_integer_scalar(n_boot, "n_boot", min = 1L)
 
   if (is.null(nimp)) nimp <- dim(object$irfs)[3]
-  nimp <- as.integer(nimp)
-  if (is.na(nimp) || nimp < 1L) {
-    stop("`nimp` must be a positive integer.")
-  }
+  nimp <- .etvar_integer_scalar(nimp, "nimp", min = 1L)
 
-  max_attempts <- as.integer(max_attempts)
-  if (is.na(max_attempts) || max_attempts < n_boot) {
-    stop("`max_attempts` must be an integer greater than or equal to `n_boot`.")
+  max_attempts <- .etvar_integer_scalar(max_attempts, "max_attempts",
+                                         min = n_boot)
+  if (!is.null(seed)) {
+    seed <- .etvar_integer_scalar(seed, "seed", min = 0L,
+                                  max = .Machine$integer.max)
   }
 
   if (!is.null(seed)) set.seed(seed)
@@ -158,12 +166,12 @@ compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
   }
 
   if (n_good == 0L) {
-    stop("No valid bootstrap IRF draws were produced.")
+    stop("No valid bootstrap IRF draws were produced.", call. = FALSE)
   }
 
   if (n_good < n_boot) {
     warning("Only ", n_good, " valid bootstrap draws were produced after ",
-            n_try, " attempts.")
+            n_try, " attempts.", call. = FALSE)
     draws <- draws[, , , seq_len(n_good), drop = FALSE]
   }
 
