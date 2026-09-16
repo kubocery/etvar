@@ -18,8 +18,9 @@ Matrix (n x n). Orthogonal rotation matrix with determinant +1.
 Builds an \code{n}-dimensional orthogonal rotation matrix by composing
 \code{n*(n-1)/2} elementary Givens rotations, one for each pair of coordinate
 planes. This parameterization maps a vector of unconstrained angles to the
-space of orthogonal matrices, which is used by \code{\link[=etvar]{etvar()}} to search for the
-structural identification.
+space of orthogonal matrices. It remains available for constructing legacy
+full-rotation starting values; \code{\link[=etvar]{etvar()}} itself optimises only the selected
+target-shock direction.
 }
 \examples{
 Q <- euler_rotation(c(0.5, -0.3, 1.2), n = 3)

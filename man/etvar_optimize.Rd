@@ -2,7 +2,7 @@
 % Please edit documentation in R/optimization.R
 \name{etvar_optimize}
 \alias{etvar_optimize}
-\title{Optimise the ETVAR rotation angles}
+\title{Optimise the ETVAR target-shock direction}
 \usage{
 etvar_optimize(
   start = NULL,
@@ -14,13 +14,15 @@ etvar_optimize(
   control_nm = list(reltol = 1e-09, maxit = 20000, trace = 0),
   control_bfgs = list(reltol = 1e-09, maxit = 4000, trace = 0, REPORT = 1),
   n_cores = 1L,
-  verbose = TRUE
+  verbose = TRUE,
+  start_parameterization = c("auto", "target", "full")
 )
 }
 \arguments{
-\item{start}{Numeric vector of length n*(n-1)/2, or \code{NULL}. Initial
-rotation angles. When \code{NULL}, defaults to zeros (Cholesky identification)
-unless \code{n_starts > 1}, in which case random multi-start is used.}
+\item{start}{Numeric vector or \code{NULL}. Initial target-direction angles of
+length \code{n - 1}. Legacy full Euler angles of length \code{n*(n-1)/2} are also
+accepted; their target column is extracted before optimisation. When
+\code{NULL}, the Cholesky target direction is used as the first start.}
 
 \item{var_est}{An \code{etvar_var} object from \code{\link[=estimate_var]{estimate_var()}}.}
 
@@ -30,8 +32,8 @@ event date(s) in the effective sample. See \code{\link[=etvar_objective]{etvar_o
 \item{shock_index}{Integer. Which structural shock to target. Default 1.}
 
 \item{n_starts}{Integer. Total number of starting points. Only used when
-\code{start = NULL}. The zero vector is included, with the remaining starts
-drawn at random. Default 1 (only the zero vector).}
+\code{start = NULL}. The Cholesky target direction is included, with the
+remaining directions drawn uniformly on the unit sphere. Default 1.}
 
 \item{seed}{Integer or \code{NULL}. Random seed for reproducible multi-start
 draws. Default \code{NULL} (no seed set).}
@@ -49,21 +51,33 @@ forking via \code{\link[parallel:mclapply]{parallel::mclapply()}} is used.}
 \item{verbose}{Logical. Print progress messages? Default \code{TRUE}. For
 sequential runs, this also enables \code{\link[=optim]{optim()}} tracing when \code{trace} is
 absent or zero. Set \code{verbose = FALSE} to suppress optimiser output.}
+
+\item{start_parameterization}{Character. Interpretation of \code{start}:
+\code{"target"}, \code{"full"}, or \code{"auto"} to infer from its length. In the
+ambiguous two-variable case, \code{"auto"} selects \code{"target"}.}
 }
 \value{
-Named list with \code{par} (optimal angles), \code{value} (best objective),
-\code{convergence} (0 indicates successful convergence), and \code{stage} (the
-optimisation stage that produced the best value).
+Named list with \code{par} (the \code{n - 1} optimal target-direction angles),
+\code{target_direction} (the corresponding unit vector), \code{rotation} (a
+deterministic orthogonal completion), \code{value} (best objective),
+\code{convergence} (0 indicates successful convergence), \code{stage} (the
+optimisation stage that produced the best value), and \code{parameterization}.
 }
 \description{
 Runs a three-stage optimisation alternating between Nelder-Mead (simplex)
-and BFGS (gradient-based) to find the rotation angles that minimise the
-\code{\link[=etvar_objective]{etvar_objective()}}.
+and BFGS (gradient-based) to find the target-shock direction that minimises
+the \code{\link[=etvar_objective]{etvar_objective()}}. Only \code{n - 1} target-direction angles are estimated;
+rotations among the non-target shocks are not identified by the criterion
+and are therefore not optimised.
 }
 \details{
 When \code{start = NULL} and \code{n_starts > 1}, a multi-start strategy is used:
-angles are drawn uniformly from \eqn{[0, 2\pi)} and the optimiser is run
-from each starting point (plus the zero vector). The solution with the
-lowest objective value is returned. This is the recommended approach when
-no pre-computed angles are available.
+target directions are drawn uniformly on the unit sphere and the optimiser
+is run from each starting point (plus the Cholesky target direction). The
+solution with the lowest objective value is returned. This is the
+recommended approach when no pre-computed direction is available.
+
+The returned non-target columns are a deterministic orthogonal completion.
+They are required for a square structural system, but they are not
+separately identified by the event-targeting objective.
 }

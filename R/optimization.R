@@ -2,28 +2,38 @@
 # Three-stage optimisation routine
 # ==============================================================================
 
-#' Optimise the ETVAR rotation angles
+#' Optimise the ETVAR target-shock direction
 #'
 #' Runs a three-stage optimisation alternating between Nelder-Mead (simplex)
-#' and BFGS (gradient-based) to find the rotation angles that minimise the
-#' [etvar_objective()].
+#' and BFGS (gradient-based) to find the target-shock direction that minimises
+#' the [etvar_objective()]. Only `n - 1` target-direction angles are estimated;
+#' rotations among the non-target shocks are not identified by the criterion
+#' and are therefore not optimised.
 #'
 #' When `start = NULL` and `n_starts > 1`, a multi-start strategy is used:
-#' angles are drawn uniformly from \eqn{[0, 2\pi)} and the optimiser is run
-#' from each starting point (plus the zero vector). The solution with the
-#' lowest objective value is returned. This is the recommended approach when
-#' no pre-computed angles are available.
+#' target directions are drawn uniformly on the unit sphere and the optimiser
+#' is run from each starting point (plus the Cholesky target direction). The
+#' solution with the lowest objective value is returned. This is the
+#' recommended approach when no pre-computed direction is available.
 #'
-#' @param start   Numeric vector of length n*(n-1)/2, or `NULL`. Initial
-#'   rotation angles. When `NULL`, defaults to zeros (Cholesky identification)
-#'   unless `n_starts > 1`, in which case random multi-start is used.
+#' The returned non-target columns are a deterministic orthogonal completion.
+#' They are required for a square structural system, but they are not
+#' separately identified by the event-targeting objective.
+#'
+#' @param start Numeric vector or `NULL`. Initial target-direction angles of
+#'   length `n - 1`. Legacy full Euler angles of length `n*(n-1)/2` are also
+#'   accepted; their target column is extracted before optimisation. When
+#'   `NULL`, the Cholesky target direction is used as the first start.
+#' @param start_parameterization Character. Interpretation of `start`:
+#'   `"target"`, `"full"`, or `"auto"` to infer from its length. In the
+#'   ambiguous two-variable case, `"auto"` selects `"target"`.
 #' @param var_est An `etvar_var` object from [estimate_var()].
 #' @param target_obs Integer or integer vector. Row index (indices) of the
 #'   event date(s) in the effective sample. See [etvar_objective()].
 #' @param shock_index Integer. Which structural shock to target. Default 1.
 #' @param n_starts Integer. Total number of starting points. Only used when
-#'   `start = NULL`. The zero vector is included, with the remaining starts
-#'   drawn at random. Default 1 (only the zero vector).
+#'   `start = NULL`. The Cholesky target direction is included, with the
+#'   remaining directions drawn uniformly on the unit sphere. Default 1.
 #' @param seed Integer or `NULL`. Random seed for reproducible multi-start
 #'   draws. Default `NULL` (no seed set).
 #' @param control_nm   List. Control parameters for Nelder-Mead. See [optim()].
@@ -36,9 +46,11 @@
 #' @param verbose Logical. Print progress messages? Default `TRUE`. For
 #'   sequential runs, this also enables [optim()] tracing when `trace` is
 #'   absent or zero. Set `verbose = FALSE` to suppress optimiser output.
-#' @return Named list with `par` (optimal angles), `value` (best objective),
-#'   `convergence` (0 indicates successful convergence), and `stage` (the
-#'   optimisation stage that produced the best value).
+#' @return Named list with `par` (the `n - 1` optimal target-direction angles),
+#'   `target_direction` (the corresponding unit vector), `rotation` (a
+#'   deterministic orthogonal completion), `value` (best objective),
+#'   `convergence` (0 indicates successful convergence), `stage` (the
+#'   optimisation stage that produced the best value), and `parameterization`.
 #' @export
 etvar_optimize <- function(start = NULL, var_est, target_obs,
                            shock_index = 1L,
@@ -48,15 +60,17 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
                            control_bfgs = list(reltol = 1e-9, maxit = 4000,
                                                trace = 0, REPORT = 1),
                            n_cores = 1L,
-                           verbose = TRUE) {
+                           verbose = TRUE,
+                           start_parameterization = c("auto", "target", "full")) {
   if (!inherits(var_est, "etvar_var")) {
     stop("`var_est` must be an `etvar_var` object from `estimate_var()`.",
          call. = FALSE)
   }
   n      <- var_est$n
-  n_ang  <- n * (n - 1) / 2
+  n_par  <- n - 1L
   shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
                                         min = 1L, max = n)
+  start_parameterization <- match.arg(start_parameterization)
   target_obs <- .etvar_index_vector(target_obs, "target_obs", nrow(var_est$Y))
   n_starts <- .etvar_integer_scalar(n_starts, "n_starts", min = 1L)
   n_cores <- .etvar_integer_scalar(n_cores, "n_cores", min = 1L, max = 2L)
@@ -69,31 +83,46 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
                                   max = .Machine$integer.max)
   }
   if (!is.null(start)) {
-    if (!is.numeric(start) || anyNA(start) || any(!is.finite(start)) ||
-        length(start) != n_ang) {
-      stop("`start` must be a finite numeric vector of length ", n_ang, ".",
-           call. = FALSE)
-    }
+    start <- .etvar_prepare_target_start(
+      start, n, shock_index, start_parameterization
+    )
   }
 
   # --- Generate starting point(s) ---
+  cholesky_direction <- numeric(n)
+  cholesky_direction[shock_index] <- 1
+  cholesky_start <- .etvar_angles_from_direction(
+    cholesky_direction, shock_index
+  )
+
   if (is.null(start) && n_starts > 1L) {
     if (!is.null(seed)) set.seed(seed)
     starts <- vector("list", n_starts)
-    starts[[1]] <- rep(0, n_ang)   # always include zeros (Cholesky)
+    starts[[1]] <- cholesky_start
     for (i in seq(2, n_starts)) {
-      starts[[i]] <- stats::runif(n_ang, 0, 2 * pi)
+      random_direction <- stats::rnorm(n)
+      random_direction <- random_direction / sqrt(sum(random_direction^2))
+      starts[[i]] <- .etvar_angles_from_direction(
+        random_direction, shock_index
+      )
     }
   } else {
-    if (is.null(start)) start <- rep(0, n_ang)
+    if (is.null(start)) start <- cholesky_start
     starts <- list(start)
   }
 
+  if (verbose) cat("Preparing event-targeting objective ...\n")
+  objective_context <- .etvar_prepare_objective(
+    var_est, target_obs, shock_index
+  )
+
   # --- Worker function: three-stage optimisation for a single start ---
-  run_three_stage <- function(init, var_est, target_obs, shock_index,
+  run_three_stage <- function(init, objective_context,
                               control_nm, control_bfgs) {
     obj_fn <- function(theta) {
-      etvar_objective(theta, var_est, target_obs, shock_index)
+      .etvar_objective_prepared(
+        theta, objective_context, parameterization = "target"
+      )
     }
     opt1 <- stats::optim(init, obj_fn, method = "Nelder-Mead",
                          control = control_nm)
@@ -109,12 +138,18 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
          convergence = best$convergence, stage = names(candidates)[best_stage])
   }
 
-  if (n_ang == 0L) {
+  if (n_par == 0L) {
+    rotation <- matrix(1, 1L, 1L)
     return(list(
       par = numeric(),
-      value = etvar_objective(numeric(), var_est, target_obs, shock_index),
+      target_direction = 1,
+      rotation = rotation,
+      value = .etvar_objective_prepared(
+        numeric(), objective_context, parameterization = "target"
+      ),
       convergence = 0L,
-      stage = "none"
+      stage = "none",
+      parameterization = "target_direction"
     ))
   }
 
@@ -137,7 +172,7 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     if (.Platform$OS.type == "unix") {
       # Fork-based parallelism (not available on Windows)
       results <- parallel::mclapply(starts, function(init) {
-        run_three_stage(init, var_est, target_obs, shock_index,
+        run_three_stage(init, objective_context,
                         ctrl_nm_quiet, ctrl_bfgs_quiet)
       }, mc.cores = n_cores, mc.set.seed = TRUE)
     } else {
@@ -153,12 +188,12 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
 
       # Export objects needed by the worker function
       parallel::clusterExport(cl, varlist = c(
-        "run_three_stage", "var_est", "target_obs", "shock_index",
+        "run_three_stage", "objective_context",
         "ctrl_nm_quiet", "ctrl_bfgs_quiet"
       ), envir = environment())
 
       results <- parallel::parLapply(cl, starts, function(init) {
-        run_three_stage(init, var_est, target_obs, shock_index,
+        run_three_stage(init, objective_context,
                         ctrl_nm_quiet, ctrl_bfgs_quiet)
       })
     }
@@ -191,7 +226,9 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     }
 
     obj_fn <- function(theta) {
-      etvar_objective(theta, var_est, target_obs, shock_index)
+      .etvar_objective_prepared(
+        theta, objective_context, parameterization = "target"
+      )
     }
 
     best <- list(par = NULL, value = Inf, convergence = 1L, stage = NA_character_)
@@ -243,5 +280,12 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     }
   }
 
+  best$target_direction <- .etvar_direction_from_angles(
+    best$par, n, shock_index
+  )
+  best$rotation <- .etvar_complete_target_rotation(
+    best$target_direction, shock_index
+  )
+  best$parameterization <- "target_direction"
   best
 }

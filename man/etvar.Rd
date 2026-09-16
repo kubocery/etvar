@@ -23,7 +23,8 @@ etvar(
   n_cores = 1L,
   verbose = TRUE,
   start_date = NULL,
-  end_date = NULL
+  end_date = NULL,
+  start_parameterization = c("auto", "target", "full")
 )
 }
 \arguments{
@@ -45,19 +46,19 @@ dates simultaneously. All supplied dates must exist in \code{dates}.}
 
 \item{shock_index}{Integer. Which structural shock to target. Default 1.}
 
-\item{start_angles}{Numeric vector of length n*(n-1)/2, or \code{NULL}.
-Pre-computed angles can be supplied to warm-start the optimisation.
-When \code{NULL} and \code{n_starts = 1}, zeros are used (Cholesky starting point).
-When \code{NULL} and \code{n_starts > 1}, a random multi-start search is performed
-(recommended when no prior solution is available).}
+\item{start_angles}{Numeric vector or \code{NULL}. Target-direction angles of
+length \code{n - 1} can be supplied to warm-start the optimisation. Legacy
+full Euler angles of length \code{n*(n-1)/2} are also accepted and converted
+to their target-shock direction. When \code{NULL}, the Cholesky target
+direction is used as the first start.}
 
 \item{optimize}{Logical. Run the three-stage optimisation? Default
 \code{TRUE}. Set to \code{FALSE} when supplying final \code{start_angles} directly.}
 
 \item{n_starts}{Integer. Total number of optimiser starting points.
-Only used when \code{start_angles = NULL}; the zero vector is always included.
-A higher number gives a better chance of finding the global minimum at the
-cost of runtime. Default 1 (single start from zeros).}
+Only used when \code{start_angles = NULL}; the Cholesky target direction is
+always included. A higher number gives a better chance of finding the
+global minimum at the cost of runtime. Default 1.}
 
 \item{seed}{Integer or \code{NULL}. Random seed for reproducible
 multi-start draws. Default \code{NULL}.}
@@ -89,12 +90,22 @@ available effective-sample date.}
 sample used to estimate the initial reduced-form VAR. The fitted VAR is
 still evaluated over the full \code{data} sample. \code{NULL} uses the last
 available date.}
+
+\item{start_parameterization}{Character. Interpretation of \code{start_angles}:
+\code{"target"}, \code{"full"}, or \code{"auto"} to infer from its length. In the
+ambiguous two-variable case, \code{"auto"} selects \code{"target"}.}
 }
 \value{
 An S3 object of class \code{"etvar"} containing:
 \describe{
 \item{var}{\code{etvar_var} object. Reduced-form VAR estimates.}
-\item{theta}{Numeric vector. Optimal rotation angles.}
+\item{theta}{Numeric vector of length \code{n - 1}. Optimal target-direction
+angles.}
+\item{target_direction}{Numeric vector of length n. Identified unit
+direction of the target shock.}
+\item{rotation}{Matrix (n x n). Deterministic orthogonal completion of
+\code{target_direction}.}
+\item{parameterization}{The string \code{"target_direction"}.}
 \item{A0}{Matrix (n x n). Structural impact matrix.}
 \item{irfs}{Array (n x n x nimp). Structural IRFs.}
 \item{hd}{Named list from \code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}.}
@@ -125,12 +136,19 @@ pipeline in a single call:
 \details{
 \enumerate{
 \item Estimate a reduced-form VAR.
-\item Optimise the rotation angles to target the event date.
+\item Optimise the target-shock direction to target the event date.
 \item Build the structural impact matrix A0.
 \item Compute impulse response functions.
 \item Perform historical decomposition (with intervention path).
 \item Rearrange shock contributions for easy plotting.
 }
+
+The event-targeting criterion identifies one unit direction: the selected
+target shock. Consequently, estimation uses \code{n - 1} parameters rather than
+a full \code{n*(n-1)/2} rotation. The remaining columns of the returned rotation
+are a deterministic orthogonal completion. Individual non-target shocks
+should not be interpreted as separately identified; their aggregate
+contribution is invariant to the chosen completion.
 }
 \examples{
 set.seed(42)

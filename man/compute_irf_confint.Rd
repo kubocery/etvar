@@ -36,6 +36,7 @@ dimensions as \code{object$irfs}, plus bootstrap metadata.
 \description{
 Builds residual-bootstrap samples from the fitted reduced-form VAR,
 re-estimates the VAR on each bootstrap sample, and recomputes structural
-IRFs using the fitted ETVAR rotation angles. The rotation is held fixed so
-the structural shock labels stay aligned with the fitted model.
+IRFs using the fitted ETVAR target direction and its stored orthogonal
+completion. The rotation is held fixed so the structural shock labels stay
+aligned with the fitted model.
 }

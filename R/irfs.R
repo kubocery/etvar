@@ -96,8 +96,9 @@ simulate_var_residual_bootstrap <- function(var_est) {
 #'
 #' Builds residual-bootstrap samples from the fitted reduced-form VAR,
 #' re-estimates the VAR on each bootstrap sample, and recomputes structural
-#' IRFs using the fitted ETVAR rotation angles. The rotation is held fixed so
-#' the structural shock labels stay aligned with the fitted model.
+#' IRFs using the fitted ETVAR target direction and its stored orthogonal
+#' completion. The rotation is held fixed so the structural shock labels stay
+#' aligned with the fitted model.
 #'
 #' @param object An `etvar` object.
 #' @param level Numeric. Confidence level. Default `0.95`.
@@ -136,8 +137,18 @@ compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
 
   if (!is.null(seed)) set.seed(seed)
 
-  n      <- object$var$n
-  Q      <- euler_rotation(object$theta, n)
+  n <- object$var$n
+  if (!is.null(object$rotation) &&
+      is.numeric(object$rotation) &&
+      identical(dim(object$rotation), c(n, n))) {
+    Q <- object$rotation
+  } else if (identical(object$parameterization, "target_direction")) {
+    Q <- .etvar_target_rotation(object$theta, n, object$shock_index)
+  } else {
+    # Compatibility with etvar objects created before target-direction
+    # parameterisation was introduced.
+    Q <- euler_rotation(object$theta, n)
+  }
   draws  <- array(NA_real_, dim = c(n, n, nimp, n_boot))
   n_good <- 0L
   n_try  <- 0L

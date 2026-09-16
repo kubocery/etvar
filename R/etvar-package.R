@@ -12,7 +12,8 @@
 #' \describe{
 #'   \item{[etvar()]}{One-call estimation: VAR + optimisation + decomposition.}
 #'   \item{[estimate_var()]}{Reduced-form VAR estimation.}
-#'   \item{[etvar_optimize()]}{Three-stage optimisation of rotation angles.}
+#'   \item{[etvar_optimize()]}{Three-stage optimisation of the target-shock
+#'     direction.}
 #'   \item{[compute_fevd()]}{Structural forecast error variance decomposition.}
 #'   \item{[hist_decomposition()]}{Historical decomposition.}
 #'   \item{[hist_decomposition_3d()]}{Historical decomposition with

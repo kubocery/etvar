@@ -17,7 +17,8 @@ decompositions, historical decompositions, and diagnostic plots.
 \describe{
 \item{\code{\link[=etvar]{etvar()}}}{One-call estimation: VAR + optimisation + decomposition.}
 \item{\code{\link[=estimate_var]{estimate_var()}}}{Reduced-form VAR estimation.}
-\item{\code{\link[=etvar_optimize]{etvar_optimize()}}}{Three-stage optimisation of rotation angles.}
+\item{\code{\link[=etvar_optimize]{etvar_optimize()}}}{Three-stage optimisation of the target-shock
+direction.}
 \item{\code{\link[=compute_fevd]{compute_fevd()}}}{Structural forecast error variance decomposition.}
 \item{\code{\link[=hist_decomposition]{hist_decomposition()}}}{Historical decomposition.}
 \item{\code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}}{Historical decomposition with

@@ -24,6 +24,12 @@
 #' generalized FEVD is based on correlated reduced-form innovations, whose
 #' indices do not correspond to the event-targeted structural shock.
 #'
+#' ETVAR identifies the target-shock direction but not a unique basis within
+#' the orthogonal non-target subspace. Thus the target share and the aggregate
+#' `others` share are invariant and identified by the event criterion, whereas
+#' individual non-target entries in `shares` depend on the deterministic
+#' orthogonal completion stored in the fitted object.
+#'
 #' @param object An `etvar` object.
 #' @param nimp Integer or `NULL`. Number of forecast horizons. Horizon 1 uses
 #'   the impact response only; horizon \eqn{H} accumulates IRFs from 0 through

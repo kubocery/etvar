@@ -36,13 +36,13 @@ fit <- etvar(
   data           = data,
   dates          = dates$dates,
   target_date    = "2025-04-03",
-  lags           = 1,
+  lags           = 8,
   constant       = as.logical(example$constant),
   trend          = example$trend,
   shock_index    = 1,
   n_starts = 1,
- # start_angles   = theta_start,
-  optimize       = TRUE,    # Set TRUE to re-run optimisation
+  start_angles   = theta_start,
+  optimize       = FALSE,    # Set TRUE to re-run optimisation
   nimp           = 30,
   variable_names = variable_names,
   verbose        = TRUE
@@ -86,7 +86,7 @@ var_est <- estimate_var(data, lags = 8,
 # 2. Find the target date in the effective sample
 target_eff <- which(dates$dates == as.Date("2025-04-03")) - var_est$lags
 
-# 3. Optimise rotation angles (3-stage: NM -> BFGS -> NM)
+# 3. Optimise the target-shock direction (3-stage: NM -> BFGS -> NM)
 opt <- etvar_optimize(
   start      = theta_start,
   var_est    = var_est,
@@ -94,9 +94,10 @@ opt <- etvar_optimize(
   verbose    = TRUE
 )
 
-# 4. Build structural impact matrix
+# 4. Build structural impact matrix. The optimiser returns a deterministic
+#    orthogonal completion whose target column is the identified direction.
 n  <- var_est$n
-Q  <- euler_rotation(opt$par, n)
+Q  <- opt$rotation
 A0 <- -t(chol(var_est$SIGMA)) %*% Q
 
 # 5. Impulse response functions

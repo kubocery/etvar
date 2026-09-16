@@ -108,7 +108,7 @@ cat("Final objective (single date):", opt_single$value, "\n")
 
 # 4. Build structural impact matrix from window solution
 n  <- var_est$n
-Q  <- euler_rotation(opt_window$par, n)
+Q  <- opt_window$rotation
 A0 <- -t(chol(var_est$SIGMA)) %*% Q
 
 # 5. Impulse response functions

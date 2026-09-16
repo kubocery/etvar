@@ -52,4 +52,10 @@ between zero and one.
 This is a structural FEVD, not a Pesaran--Shin generalized FEVD. A
 generalized FEVD is based on correlated reduced-form innovations, whose
 indices do not correspond to the event-targeted structural shock.
+
+ETVAR identifies the target-shock direction but not a unique basis within
+the orthogonal non-target subspace. Thus the target share and the aggregate
+\code{others} share are invariant and identified by the event criterion, whereas
+individual non-target entries in \code{shares} depend on the deterministic
+orthogonal completion stored in the fitted object.
 }

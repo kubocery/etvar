@@ -8,11 +8,18 @@
 #' pipeline in a single call:
 #'
 #' 1. Estimate a reduced-form VAR.
-#' 2. Optimise the rotation angles to target the event date.
+#' 2. Optimise the target-shock direction to target the event date.
 #' 3. Build the structural impact matrix A0.
 #' 4. Compute impulse response functions.
 #' 5. Perform historical decomposition (with intervention path).
 #' 6. Rearrange shock contributions for easy plotting.
+#'
+#' The event-targeting criterion identifies one unit direction: the selected
+#' target shock. Consequently, estimation uses `n - 1` parameters rather than
+#' a full `n*(n-1)/2` rotation. The remaining columns of the returned rotation
+#' are a deterministic orthogonal completion. Individual non-target shocks
+#' should not be interpreted as separately identified; their aggregate
+#' contribution is invariant to the chosen completion.
 #'
 #' @param data           Matrix or data.frame (T x n). Time-series data.
 #'   Each column is a variable. Must be numeric.
@@ -33,17 +40,20 @@
 #' @param constant       Logical. Include an intercept? Default `TRUE`.
 #' @param trend          Integer. Trend order (0, 1, or 2). Default 0.
 #' @param shock_index    Integer. Which structural shock to target. Default 1.
-#' @param start_angles   Numeric vector of length n*(n-1)/2, or `NULL`.
-#'   Pre-computed angles can be supplied to warm-start the optimisation.
-#'   When `NULL` and `n_starts = 1`, zeros are used (Cholesky starting point).
-#'   When `NULL` and `n_starts > 1`, a random multi-start search is performed
-#'   (recommended when no prior solution is available).
+#' @param start_angles Numeric vector or `NULL`. Target-direction angles of
+#'   length `n - 1` can be supplied to warm-start the optimisation. Legacy
+#'   full Euler angles of length `n*(n-1)/2` are also accepted and converted
+#'   to their target-shock direction. When `NULL`, the Cholesky target
+#'   direction is used as the first start.
+#' @param start_parameterization Character. Interpretation of `start_angles`:
+#'   `"target"`, `"full"`, or `"auto"` to infer from its length. In the
+#'   ambiguous two-variable case, `"auto"` selects `"target"`.
 #' @param optimize       Logical. Run the three-stage optimisation? Default
 #'   `TRUE`. Set to `FALSE` when supplying final `start_angles` directly.
 #' @param n_starts       Integer. Total number of optimiser starting points.
-#'   Only used when `start_angles = NULL`; the zero vector is always included.
-#'   A higher number gives a better chance of finding the global minimum at the
-#'   cost of runtime. Default 1 (single start from zeros).
+#'   Only used when `start_angles = NULL`; the Cholesky target direction is
+#'   always included. A higher number gives a better chance of finding the
+#'   global minimum at the cost of runtime. Default 1.
 #' @param seed           Integer or `NULL`. Random seed for reproducible
 #'   multi-start draws. Default `NULL`.
 #' @param nimp           Integer. Number of IRF horizons, including horizon
@@ -61,7 +71,13 @@
 #' @return An S3 object of class `"etvar"` containing:
 #'   \describe{
 #'     \item{var}{`etvar_var` object. Reduced-form VAR estimates.}
-#'     \item{theta}{Numeric vector. Optimal rotation angles.}
+#'     \item{theta}{Numeric vector of length `n - 1`. Optimal target-direction
+#'       angles.}
+#'     \item{target_direction}{Numeric vector of length n. Identified unit
+#'       direction of the target shock.}
+#'     \item{rotation}{Matrix (n x n). Deterministic orthogonal completion of
+#'       `target_direction`.}
+#'     \item{parameterization}{The string `"target_direction"`.}
 #'     \item{A0}{Matrix (n x n). Structural impact matrix.}
 #'     \item{irfs}{Array (n x n x nimp). Structural IRFs.}
 #'     \item{hd}{Named list from [hist_decomposition_3d()].}
@@ -102,7 +118,8 @@ etvar <- function(data, dates, target_date, lags = 8L,
                                       trace = 0, REPORT = 1),
                   n_cores = 1L,
                   verbose = TRUE,
-                  start_date = NULL, end_date = NULL) {
+                  start_date = NULL, end_date = NULL,
+                  start_parameterization = c("auto", "target", "full")) {
 
   # --- Input validation ---
   data         <- .etvar_numeric_matrix(data)
@@ -113,6 +130,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
   trend <- .etvar_integer_scalar(trend, "trend", min = 0L, max = 2L)
   shock_index <- .etvar_integer_scalar(shock_index, "shock_index", min = 1L,
                                         max = ncol(data))
+  start_parameterization <- match.arg(start_parameterization)
   optimize <- .etvar_flag(optimize, "optimize")
   n_starts <- .etvar_integer_scalar(n_starts, "n_starts", min = 1L)
   nimp <- .etvar_integer_scalar(nimp, "nimp", min = 1L)
@@ -127,12 +145,12 @@ etvar <- function(data, dates, target_date, lags = 8L,
   }
   n <- ncol(data)
 
-  n_angles <- n * (n - 1L) / 2L
-  if (!is.null(start_angles) &&
-      (!is.numeric(start_angles) || anyNA(start_angles) ||
-       any(!is.finite(start_angles)) || length(start_angles) != n_angles)) {
-    stop("`start_angles` must be a finite numeric vector of length ",
-         n_angles, ".", call. = FALSE)
+  target_start <- if (is.null(start_angles)) {
+    NULL
+  } else {
+    .etvar_prepare_target_start(
+      start_angles, n, shock_index, start_parameterization
+    )
   }
 
   if (is.null(variable_names)) {
@@ -221,17 +239,18 @@ etvar <- function(data, dates, target_date, lags = 8L,
   var_est$estimation_start_date <- estimation_dates[1L]
   var_est$estimation_end_date <- estimation_dates[length(estimation_dates)]
 
-  # --- 2. Optimise rotation angles ---
+  # --- 2. Optimise the target-shock direction ---
   # target_obs are in raw-data indices; adjust to effective-sample indices
   target_eff <- target_obs - lags
 
   if (optimize) {
-    if (verbose) cat("Optimising rotation angles ...\n")
+    if (verbose) cat("Optimising target-shock direction ...\n")
     opt <- etvar_optimize(
-      start        = start_angles,
+      start        = target_start,
       var_est      = var_est,
       target_obs   = target_eff,
       shock_index  = shock_index,
+      start_parameterization = "target",
       n_starts     = n_starts,
       seed         = seed,
       control_nm   = control_nm,
@@ -240,16 +259,26 @@ etvar <- function(data, dates, target_date, lags = 8L,
       verbose      = verbose
     )
     theta_opt <- opt$par
+    Q <- opt$rotation
     obj_value <- opt$value
   } else {
-    if (is.null(start_angles)) start_angles <- rep(0, n * (n - 1) / 2)
-    theta_opt <- start_angles
-    obj_value <- etvar_objective(start_angles, var_est, target_eff, shock_index)
+    if (is.null(target_start)) {
+      cholesky_direction <- numeric(n)
+      cholesky_direction[shock_index] <- 1
+      target_start <- .etvar_angles_from_direction(
+        cholesky_direction, shock_index
+      )
+    }
+    theta_opt <- target_start
+    Q <- .etvar_target_rotation(theta_opt, n, shock_index)
+    obj_value <- etvar_objective(
+      theta_opt, var_est, target_eff, shock_index,
+      parameterization = "target"
+    )
     if (verbose) cat("Using supplied angles. Objective:", obj_value, "\n")
   }
 
   # --- 3. Structural impact matrix ---
-  Q  <- euler_rotation(theta_opt, n)
   A0 <- -t(chol(var_est$SIGMA)) %*% Q
 
   # --- 4. Impulse response functions ---
@@ -280,6 +309,9 @@ etvar <- function(data, dates, target_date, lags = 8L,
   structure(list(
     var            = var_est,
     theta          = theta_opt,
+    target_direction = drop(Q[, shock_index]),
+    rotation       = Q,
+    parameterization = "target_direction",
     A0             = A0,
     irfs           = irfs,
     hd             = hd,
@@ -363,7 +395,7 @@ summary.etvar <- function(object, ...) {
         paste(format(object$target_dates, "%Y-%m-%d"), collapse = ", "), "\n")
   }
   cat("  Target shock: ", object$shock_index, "\n")
-  cat("  N angles:     ", length(object$theta), "\n")
+  cat("  Target-direction parameters:", length(object$theta), "\n")
   cat("  Objective:    ", round(object$objective, 6), "\n\n")
 
   cat("Variable names:\n")

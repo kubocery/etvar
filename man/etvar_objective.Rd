@@ -4,10 +4,18 @@
 \alias{etvar_objective}
 \title{ETVAR objective function}
 \usage{
-etvar_objective(theta, var_est, target_obs, shock_index = 1L)
+etvar_objective(
+  theta,
+  var_est,
+  target_obs,
+  shock_index = 1L,
+  parameterization = c("auto", "target", "full")
+)
 }
 \arguments{
-\item{theta}{Numeric vector. Rotation angles (length n*(n-1)/2).}
+\item{theta}{Numeric vector. Target-direction angles of length \code{n - 1}.
+For backward compatibility, full Euler angles of length \code{n*(n-1)/2} are
+also accepted when \code{parameterization = "auto"} or \code{"full"}.}
 
 \item{var_est}{An \code{etvar_var} object from \code{\link[=estimate_var]{estimate_var()}}.}
 
@@ -17,22 +25,25 @@ event date(s) in the effective sample (i.e., in
 window: the objective is the sum across all event dates.}
 
 \item{shock_index}{Integer. Which structural shock to target. Default 1.}
+
+\item{parameterization}{Character. Interpretation of \code{theta}: \code{"target"}
+for the new target-direction angles, \code{"full"} for legacy full Euler
+angles, or \code{"auto"} to infer from the vector length. In the ambiguous
+two-variable case, \code{"auto"} selects \code{"target"}.}
 }
 \value{
 Scalar. Sum of absolute scaled deviations across all target dates
 (lower is better).
 }
 \description{
-Given a vector of rotation angles π, this function:
-\enumerate{
-\item Constructs the structural impact matrix A0 = chol(Σ)' Q(π).
-\item Runs a historical decomposition.
-\item Isolates the counterfactual path driven by the target structural shock.
-\item Computes the scaled absolute deviation between the counterfactual and
-realised growth rates on the event date.
-}
+Given a vector of target-direction angles, this function constructs the
+target direction and evaluates its event-date contribution. The target path
+is represented as precomputed quadratic forms in the direction vector, so a
+complete historical decomposition is not required for each evaluation.
 }
 \details{
 The optimiser minimises this function to find the rotation that makes the
-target shock best explain the event-date movements.
+target shock best explain the event-date movements. \code{\link[=etvar_optimize]{etvar_optimize()}}
+prepares the direction-independent quantities once and reuses them throughout
+all optimisation stages and starting points.
 }

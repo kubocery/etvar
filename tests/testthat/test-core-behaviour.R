@@ -85,6 +85,134 @@ test_that("verbose sequential optimisation enables live optim tracing", {
   expect_true(any(grepl("value", output, fixed = TRUE)))
 })
 
+test_that("target-direction parameterisation replaces the full rotation", {
+  set.seed(404)
+  data <- matrix(stats::rnorm(240L), ncol = 3L)
+  colnames(data) <- c("y1", "y2", "y3")
+  dates <- seq.Date(as.Date("2022-01-01"), by = "day", length.out = nrow(data))
+  var_est <- estimate_var(data, lags = 2L, nimp_wold = 4L)
+
+  legacy_angles <- c(0.3, -0.7, 1.1)
+  legacy_rotation <- euler_rotation(legacy_angles, 3L)
+  target_angles <- etvar:::.etvar_prepare_target_start(
+    legacy_angles, n = 3L, shock_index = 2L, parameterization = "full"
+  )
+  target_rotation <- etvar:::.etvar_target_rotation(
+    target_angles, n = 3L, shock_index = 2L
+  )
+
+  expect_length(target_angles, 2L)
+  expect_equal(target_rotation[, 2L], legacy_rotation[, 2L], tolerance = 1e-12)
+  expect_equal(crossprod(target_rotation), diag(3L), tolerance = 1e-12)
+  expect_equal(det(target_rotation), 1, tolerance = 1e-12)
+  expect_equal(
+    etvar_objective(
+      legacy_angles, var_est, target_obs = 50L, shock_index = 2L,
+      parameterization = "full"
+    ),
+    etvar_objective(
+      target_angles, var_est, target_obs = 50L, shock_index = 2L,
+      parameterization = "target"
+    ),
+    tolerance = 1e-10
+  )
+
+  fit <- etvar(
+    data, dates, target_date = dates[60L], lags = 2L,
+    shock_index = 2L, start_angles = legacy_angles,
+    start_parameterization = "full", optimize = FALSE, nimp = 4L,
+    verbose = FALSE
+  )
+  expect_length(fit$theta, 2L)
+  expect_identical(fit$parameterization, "target_direction")
+  expect_equal(fit$target_direction, legacy_rotation[, 2L], tolerance = 1e-12)
+  expect_equal(fit$rotation[, 2L], fit$target_direction, tolerance = 1e-12)
+})
+
+test_that("prepared objective matches the full historical decomposition", {
+  set.seed(406)
+  data <- matrix(stats::rnorm(270L), ncol = 3L)
+  target_obs <- c(40L, 70L)
+  target_angles <- c(0.35, -0.6)
+
+  slow_objective <- function(theta, var_est, target_obs, shock_index) {
+    Q <- etvar:::.etvar_target_rotation(theta, var_est$n, shock_index)
+    A0 <- -t(chol(var_est$SIGMA)) %*% Q
+    decomp <- hist_decomposition(
+      A0, var_est$ALPHA, var_est$Y, var_est$X, var_est$n,
+      var_est$lags, var_est$trend, var_est$constant
+    )
+    counterfactual <- decomp$deterministic +
+      decomp$hist_matrix[, , shock_index]
+    counterfactual_diff <- diff(counterfactual)
+    real_diff <- diff(var_est$data)
+    scales <- apply(real_diff, 2L, stats::sd)
+    indices <- target_obs + var_est$lags - 1L
+    sum(abs(
+      sweep(counterfactual_diff[indices, , drop = FALSE], 2L, scales, "/") -
+        sweep(real_diff[indices, , drop = FALSE], 2L, scales, "/")
+    ))
+  }
+
+  specifications <- expand.grid(
+    constant = c(FALSE, TRUE),
+    trend = 0:2,
+    KEEP.OUT.ATTRS = FALSE
+  )
+
+  for (i in seq_len(nrow(specifications))) {
+    var_est <- estimate_var(
+      data,
+      lags = 2L,
+      constant = specifications$constant[i],
+      trend = specifications$trend[i],
+      nimp_wold = 3L
+    )
+    context <- etvar:::.etvar_prepare_objective(
+      var_est, target_obs, shock_index = 2L
+    )
+    prepared <- etvar:::.etvar_objective_prepared(
+      target_angles, context, parameterization = "target"
+    )
+    public <- etvar_objective(
+      target_angles, var_est, target_obs, shock_index = 2L,
+      parameterization = "target"
+    )
+    reference <- slow_objective(
+      target_angles, var_est, target_obs, shock_index = 2L
+    )
+
+    expect_s3_class(context, "etvar_objective_context")
+    expect_equal(prepared, reference, tolerance = 1e-9)
+    expect_equal(public, reference, tolerance = 1e-9)
+  }
+})
+
+test_that("optimiser returns n - 1 parameters and a valid completion", {
+  set.seed(405)
+  data <- matrix(stats::rnorm(150L), ncol = 3L)
+  var_est <- estimate_var(data, lags = 1L, nimp_wold = 3L)
+
+  result <- suppressWarnings(etvar_optimize(
+    start = c(0.2, -0.3, 0.5),
+    start_parameterization = "full",
+    var_est = var_est,
+    target_obs = 35L,
+    shock_index = 2L,
+    control_nm = list(reltol = 1e-4, maxit = 1L, trace = 0),
+    control_bfgs = list(reltol = 1e-4, maxit = 1L, trace = 0, REPORT = 1L),
+    verbose = FALSE
+  ))
+
+  expect_length(result$par, 2L)
+  expect_length(result$target_direction, 3L)
+  expect_equal(result$rotation[, 2L], result$target_direction,
+               tolerance = 1e-12)
+  expect_equal(crossprod(result$rotation), diag(3L), tolerance = 1e-12)
+  expect_equal(det(result$rotation), 1, tolerance = 1e-12)
+  expect_identical(result$parameterization, "target_direction")
+})
+
 test_that("etvar computes as many Wold horizons as requested", {
   data <- make_core_test_data()
   dates <- seq.Date(as.Date("2021-01-01"), by = "day", length.out = nrow(data))
