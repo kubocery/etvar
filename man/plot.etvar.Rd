@@ -7,7 +7,7 @@
 \method{plot}{etvar}(
   x,
   type = c("irfs", "fevd", "hd", "counterfactual", "errors"),
-  variable = 1L,
+  variable = NULL,
   variables = NULL,
   shock = NULL,
   scaling_index = NULL,
@@ -19,6 +19,7 @@
   x_date_breaks = "1 week",
   x_break_every = 2L,
   merge_target_components = FALSE,
+  facet_ncol = 2L,
   title = NULL,
   conf_int = FALSE,
   conf_level = 0.95,
@@ -39,20 +40,20 @@
 \item{\code{"fevd"}}{Structural forecast error variance decomposition,
 grouping the selected target shock against all other shocks.}
 \item{\code{"hd"}}{Historical decomposition stacked bar charts.}
-\item{\code{"counterfactual"}}{Counterfactual vs realised path (specify
-\code{variable} argument).}
-\item{\code{"errors"}}{Structural error time series (specify \code{shock}
-argument).}
+\item{\code{"counterfactual"}}{Counterfactual vs realised paths.}
+\item{\code{"errors"}}{Target structural error time series.}
 }}
 
-\item{variable}{Integer. For \code{type = "counterfactual"}, which variable
-to display. Default 1.}
+\item{variable}{Integer or \code{NULL}. Backward-compatible alias for selecting
+one variable. Prefer \code{variables}. If both are supplied, an error is
+raised.}
 
-\item{variables}{Integer vector or \code{NULL}. For \code{type = "fevd"}, variables
-to display. The default displays all variables.}
+\item{variables}{Integer vector or \code{NULL}. Variables to display for IRF,
+FEVD, counterfactual, and historical-decomposition plots. \code{NULL} displays
+all variables.}
 
-\item{shock}{Integer. Shock to display for IRF, FEVD, counterfactual, and
-error plots. Default: the target shock.}
+\item{shock}{Integer or \code{NULL}. Shock to display for IRF, FEVD,
+counterfactual, and error plots. The default is the target shock.}
 
 \item{scaling_index}{Numeric vector for \code{type = "irfs"}. See
 \code{\link[=plot_etvar_irfs]{plot_etvar_irfs()}}.}
@@ -70,31 +71,26 @@ markers.}
 
 \item{event_labels}{Character vector for \code{type = "errors"}. Event labels.}
 
-\item{n_tail}{Integer. Number of trailing observations for counterfactual
-and error plots. Default 40.}
+\item{n_tail}{Integer. Number of trailing observations for counterfactual,
+historical-decomposition, and error plots. Default 40.}
 
 \item{x_date_breaks}{Character. Date break spacing for ggplot-based
 date axes (\code{"counterfactual"}, \code{"errors"}). Passed to
 \code{\link[ggplot2:scale_x_date]{ggplot2::scale_x_date()}} (e.g. \code{"1 week"}, \code{"2 weeks"}, \code{"1 month"}).
 Default \code{"1 week"}.}
 
-\item{x_break_every}{Integer. For \code{type = "hd"} (base-R), show every
+\item{x_break_every}{Integer. For \code{type = "hd"}, show every
 \code{x_break_every}-th date label on the x-axis. Default 2.}
 
 \item{merge_target_components}{Logical. For \code{type = "hd"}, merge
 the event-date target-shock component and continued target-shock
 component into one bar segment. Default \code{FALSE}.}
 
-\item{title}{Character, \code{NULL}, or \code{NA}.
-\itemize{
-\item \code{NULL}: use default per-plot title.
-\item \code{NA}: remove title.
-\item Character scalar: custom title.
-\item Character vector: for multi-panel variable plots, custom titles by
-variable/panel. Named vectors are matched to variable names.
-For \code{type = "fevd"}, \code{title} must be a scalar because variable names are
-displayed in facet headings.
-}}
+\item{facet_ncol}{Integer. Number of columns in faceted variable plots.
+Default 2.}
+
+\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses the default plot
+title, \code{NA} removes it, and a character scalar supplies a custom title.}
 
 \item{conf_int}{Logical. For \code{type = "irfs"}, draw bootstrap confidence
 intervals around the IRFs. Default \code{FALSE}.}
@@ -118,8 +114,7 @@ confidence intervals.}
 \item{...}{Additional arguments (currently unused).}
 }
 \value{
-A ggplot object (for \code{"fevd"}, \code{"counterfactual"}, and \code{"errors"})
-or \code{NULL} invisibly (for base-R plots).
+A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
 S3 plotting method that dispatches to specialised plotting functions based

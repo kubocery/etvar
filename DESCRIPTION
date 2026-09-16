@@ -21,7 +21,6 @@ Roxygen: list(markdown = TRUE)
 Imports:
     parallel,
     stats,
-    graphics,
     grDevices,
     ggplot2 (>= 3.4.0),
     utils

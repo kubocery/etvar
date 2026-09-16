@@ -19,7 +19,9 @@ plot_etvar_hd(
   merge_target_components = FALSE,
   shock_labels = c("Event shock", "Continued shocks", "Other shocks"),
   open_device = FALSE,
-  ask = interactive()
+  ask = interactive(),
+  variables = NULL,
+  facet_ncol = 2L
 )
 }
 \arguments{
@@ -44,16 +46,10 @@ event.}
 \item{n_tail}{Integer. Number of trailing observations. Default 41.}
 
 \item{x_break_every}{Integer. Show every k-th date label on the x-axis
-(base-R historical decomposition plot). Default 2.}
+Default 2.}
 
-\item{title}{Character, \code{NULL}, or \code{NA}.
-\itemize{
-\item Character scalar: custom title for every panel.
-\item Character vector: per-variable/panel titles. Named vectors are matched
-to \code{variable_names}.
-\item \code{NA}: no panel title.
-\item \code{NULL}: use \code{variable_names}.
-}}
+\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses
+\code{"Historical decomposition"}, and \code{NA} removes the title.}
 
 \item{merge_target_components}{Logical. If \code{TRUE}, merge \code{target_stop}
 (event shock) and \code{target_rest} (continued target shocks) into a single
@@ -62,15 +58,19 @@ target-shock bar component. Default \code{FALSE}.}
 \item{shock_labels}{Character vector of length 3. Labels for the three
 bar components. Default: \code{c("Event shock", "Continued shocks", "Other shocks")}.}
 
-\item{open_device}{Logical. Open a new graphics device before plotting?
-Default \code{FALSE}.}
+\item{open_device}{Deprecated compatibility argument. It is validated but
+otherwise ignored because the function now returns a ggplot object.}
 
-\item{ask}{Logical. If \code{TRUE} and multiple variables are plotted in
-the current device, prompt the user before advancing to the next plot.
-Default \code{interactive()}.}
+\item{ask}{Deprecated compatibility argument. It is validated but otherwise
+ignored; faceted plots never prompt between variables.}
+
+\item{variables}{Integer vector or \code{NULL}. Variables to display. \code{NULL}
+displays all variables.}
+
+\item{facet_ncol}{Integer. Number of facet columns. Default 2.}
 }
 \value{
-\code{NULL} (invisibly). Produces plots (one per variable).
+A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
 For each variable, produces a stacked bar chart showing the contributions of

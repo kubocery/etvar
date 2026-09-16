@@ -16,7 +16,8 @@ plot_etvar_irfs(
   irf_ci = NULL,
   conf_int = NULL,
   ci_col = grDevices::adjustcolor("gray70", alpha.f = 0.45),
-  ci_border = NA
+  ci_border = NA,
+  facet_ncol = 2L
 )
 }
 \arguments{
@@ -41,9 +42,8 @@ Default \code{FALSE}.}
 \item{variables}{Integer vector. Which variables to plot (indices). Default:
 all variables.}
 
-\item{title}{Character, \code{NULL}, or \code{NA}. \code{NULL} uses \code{variable_names}, \code{NA}
-removes titles, a scalar applies to every panel, and a vector supplies
-per-variable/panel titles. Named vectors are matched to \code{variable_names}.}
+\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses
+\code{"Structural impulse response functions"}, and \code{NA} removes the title.}
 
 \item{irf_ci}{Optional list with \code{lower} and \code{upper} arrays matching \code{irfs},
 typically from \code{\link[=compute_irf_confint]{compute_irf_confint()}}. When supplied, confidence bands are
@@ -57,11 +57,13 @@ intervals from \code{irfs} alone.}
 \item{ci_col}{Fill colour for the confidence band.}
 
 \item{ci_border}{Border colour for the confidence band. Default \code{NA}.}
+
+\item{facet_ncol}{Integer. Number of facet columns. Default 2.}
 }
 \value{
-\code{NULL} (invisibly). Produces a plot on the current device.
+A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
-Produces a multi-panel base-R figure showing the normalised response of
-each variable to a chosen structural shock.
+Produces a faceted ggplot showing the normalised response of each selected
+variable to a chosen structural shock.
 }

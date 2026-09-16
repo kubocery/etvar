@@ -11,13 +11,15 @@ plot_etvar_errors(
   event_dates = NULL,
   event_labels = NULL,
   x_date_breaks = "1 week",
-  title = "Structural error"
+  title = NULL,
+  panel_title = NULL,
+  line_color = "#D95319"
 )
 }
 \arguments{
 \item{date_vec}{Date vector. Full date index for the structural errors.}
 
-\item{errors}{Numeric vector. The structural error series to plot.}
+\item{errors}{Numeric vector. Structural error series.}
 
 \item{n_tail}{Integer. Number of trailing observations. Default 100.}
 
@@ -30,12 +32,21 @@ vertical red dashed lines.}
 \code{\link[ggplot2:scale_x_date]{ggplot2::scale_x_date()}} (e.g. \code{"1 week"}, \code{"2 weeks"}, \code{"1 month"}).
 Default \code{"1 week"}.}
 
-\item{title}{Character. Plot title. Default \code{"Structural error"}.}
+\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses
+\code{"Structural error"}, and \code{NA} removes the title.}
+
+\item{panel_title}{Character scalar or \code{NULL}. Label displayed in the facet
+strip. \code{NULL} uses \code{"Target shock"}.}
+
+\item{line_color}{Character scalar. Colour of the structural-error line.
+Default \code{"#D95319"}, matching the target-shock colour in FEVD and
+historical-decomposition plots.}
 }
 \value{
 A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
-Creates a ggplot of a single structural error series with optional vertical
-event lines and text annotations.
+Creates a ggplot of one structural error series with optional vertical event
+lines and text annotations. A facet strip identifies the plotted shock so
+that the visual style matches the other ETVAR plots.
 }

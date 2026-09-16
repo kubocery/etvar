@@ -10,17 +10,22 @@ plot_etvar_counterfactual(
   counterfactual,
   n_tail = 40L,
   x_date_breaks = "1 week",
-  title = "",
+  title = NULL,
   ylab = "",
-  legend_position = "right"
+  legend_position = "bottom",
+  variable_names = NULL,
+  variables = NULL,
+  facet_ncol = 2L
 )
 }
 \arguments{
 \item{date_vec}{Date vector. Full date index.}
 
-\item{realized}{Numeric vector. Observed data for the variable.}
+\item{realized}{Numeric vector or matrix. Observed data, with variables
+in columns.}
 
-\item{counterfactual}{Numeric vector. Model-implied path (shock only).}
+\item{counterfactual}{Numeric vector or matrix with the same dimensions as
+\code{realized}. Model-implied paths.}
 
 \item{n_tail}{Integer. Number of trailing observations to display.
 Default 40.}
@@ -29,18 +34,26 @@ Default 40.}
 \code{\link[ggplot2:scale_x_date]{ggplot2::scale_x_date()}} (e.g. \code{"1 week"}, \code{"2 weeks"}, \code{"1 month"}).
 Default \code{"1 week"}.}
 
-\item{title}{Character. Plot title. Default \code{""}.}
+\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses
+\code{"Counterfactual versus realised paths"}, and \code{NA} removes the title.}
 
 \item{ylab}{Character. Y-axis label. Default \code{""}.}
 
 \item{legend_position}{Legend position passed to \code{\link[ggplot2:theme]{ggplot2::theme()}}. Default
-\code{"right"}.}
+\code{"bottom"}.}
+
+\item{variable_names}{Character vector with one label per variable. If
+\code{NULL}, column names are used when available, otherwise \code{V1}, \code{V2}, ...}
+
+\item{variables}{Integer vector or \code{NULL}. Variables to display. \code{NULL}
+displays all variables.}
+
+\item{facet_ncol}{Integer. Number of facet columns. Default 2.}
 }
 \value{
 A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
-Creates a ggplot comparing the model-implied counterfactual path (driven by
-the target structural shock only) against the observed data for a single
-variable.
+Creates a faceted ggplot comparing the model-implied counterfactual paths
+(driven by the selected structural shock only) against the observed data.
 }

@@ -65,9 +65,9 @@ summary(fit_window)
 
 plot(fit_window, type = "irfs", scaling_index = c(2, 1, 1))
 
-plot(fit_window, type = "counterfactual", variable = 1, n_tail = 40)
+plot(fit_window, type = "counterfactual", variables = 1, n_tail = 40)
 
-plot(fit_window, type = "errors", shock = 1, n_tail = 100,
+plot(fit_window, type = "errors", n_tail = 100,
      event_dates  = target_window,
      event_labels = c("Liberation Day", "90-day pause", "China-US truce"))
 

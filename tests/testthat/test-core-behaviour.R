@@ -110,30 +110,68 @@ test_that("bootstrap intervals and plotters handle fitted output", {
   intervals <- compute_irf_confint(fit, n_boot = 2L, seed = 1L,
                                    max_attempts = 6L)
   expect_identical(dim(intervals$lower), dim(fit$irfs))
-  expect_s3_class(
-    plot_etvar_counterfactual(dates, data[, 1L],
-                              fit$hd$all_data[, 1L, 1L]),
-    "ggplot"
+  irf_plot <- plot_etvar_irfs(
+    fit$irfs, fit$variable_names, variables = 2L,
+    irf_ci = intervals, facet_ncol = 1L
   )
-  expect_s3_class(
-    plot_etvar_errors(dates[-seq_len(fit$var$lags)],
-                      fit$hd$errors_str[, 1L]),
-    "ggplot"
+  counterfactual_plot <- plot_etvar_counterfactual(
+    dates, data, fit$hd$all_data[, , 1L],
+    variable_names = fit$variable_names
   )
-
-  plot_file <- tempfile(fileext = ".pdf")
-  grDevices::pdf(plot_file)
-  on.exit({
-    grDevices::dev.off()
-    unlink(plot_file)
-  }, add = TRUE)
-  old_mar <- graphics::par("mar")
-  plot_etvar_irfs(fit$irfs, fit$variable_names)
-  expect_equal(graphics::par("mar"), old_mar)
-  plot_etvar_hd(
+  hd_plot <- plot_etvar_hd(
     dates, data, fit$hd$deterministic, fit$shocks$target_stop,
     fit$shocks$target_rest, fit$shocks$others, fit$datestar,
-    fit$variable_names, ask = FALSE
+    fit$variable_names, ask = FALSE, variables = 2L
   )
-  expect_equal(graphics::par("mar"), old_mar)
+  error_plot <- plot_etvar_errors(
+    dates[-seq_len(fit$var$lags)], fit$hd$errors_str[, 1L]
+  )
+
+  plots <- list(irf_plot, counterfactual_plot, hd_plot, error_plot)
+  for (pl in plots) {
+    expect_s3_class(pl, "ggplot")
+    expect_no_error(ggplot2::ggplot_build(pl))
+  }
+  expect_identical(levels(irf_plot$data$Variable), "y2")
+  expect_identical(levels(counterfactual_plot$data$Variable), c("y1", "y2"))
+  expect_identical(levels(hd_plot$data$Variable), "y2")
+  expect_identical(levels(error_plot$data$Shock), "Target shock")
+})
+
+test_that("plot.etvar uses consistent faceted selection interfaces", {
+  skip_if_not_installed("ggplot2")
+  data <- make_core_test_data()
+  dates <- seq.Date(as.Date("2021-01-01"), by = "day", length.out = nrow(data))
+  fit <- etvar(
+    data, dates, target_date = dates[70L], lags = 2L,
+    optimize = FALSE, nimp = 4L, verbose = FALSE
+  )
+
+  for (type in c("irfs", "fevd", "counterfactual", "hd")) {
+    pl <- plot(fit, type = type, variables = 2L, facet_ncol = 1L)
+    expect_s3_class(pl, "ggplot")
+    expect_no_error(ggplot2::ggplot_build(pl))
+    expect_identical(levels(pl$data$Variable), "y2")
+  }
+
+  legacy_plot <- plot(fit, type = "counterfactual", variable = 1L)
+  expect_s3_class(legacy_plot, "ggplot")
+  expect_identical(levels(legacy_plot$data$Variable), "y1")
+
+  target_error <- plot(fit, type = "errors")
+  expect_s3_class(target_error, "ggplot")
+  expect_no_error(ggplot2::ggplot_build(target_error))
+  expect_identical(
+    levels(target_error$data$Shock),
+    "Target shock (1)"
+  )
+  expect_identical(target_error$labels$title, "Structural error")
+  expect_identical(target_error$layers[[2L]]$aes_params$colour, "#D95319")
+  legacy_error <- plot(fit, type = "errors", shock = 1L)
+  expect_identical(levels(legacy_error$data$Shock), "Target shock (1)")
+
+  expect_error(
+    plot(fit, type = "hd", variable = 1L, variables = 2L),
+    "only one"
+  )
 })

@@ -60,15 +60,16 @@ plot(fit, type = "irfs", scaling_index = c(2, 1, 1), conf_int = TRUE, conf_level
 # Forecast error variance shares: target shock versus all other shocks
 plot(fit, type = "fevd")
 
-# Counterfactual vs realised for 1Y Inflation Swap Rate (variable 6)
-plot(fit, type = "counterfactual", variable = 1, n_tail = 40)
+# Counterfactual vs realised for SP500 (variable 1). Omit `variables` to show
+# every variable in one faceted plot.
+plot(fit, type = "counterfactual", variables = 1, n_tail = 40)
 
-# Structural error series for shock 1 with event markers
-plot(fit, type = "errors", shock = 1, n_tail = 100,
+# Target structural error with event markers.
+plot(fit, type = "errors", n_tail = 100,
      event_dates  = as.Date(c("2025-04-03", "2025-04-09", "2025-05-12")),
      event_labels = c("Liberation Day", "90-day pause", "China-US truce"))
 
-# Historical decomposition stacked bar charts (all variables)
+# Historical decomposition stacked bar charts (all variables; no paging)
 plot(fit, type = "hd", n_tail = 41)
 
 

@@ -391,17 +391,17 @@ summary.etvar <- function(object, ...) {
 #'     \item{`"fevd"`}{Structural forecast error variance decomposition,
 #'       grouping the selected target shock against all other shocks.}
 #'     \item{`"hd"`}{Historical decomposition stacked bar charts.}
-#'     \item{`"counterfactual"`}{Counterfactual vs realised path (specify
-#'       `variable` argument).}
-#'     \item{`"errors"`}{Structural error time series (specify `shock`
-#'       argument).}
+#'     \item{`"counterfactual"`}{Counterfactual vs realised paths.}
+#'     \item{`"errors"`}{Target structural error time series.}
 #'   }
-#' @param variable Integer. For `type = "counterfactual"`, which variable
-#'   to display. Default 1.
-#' @param variables Integer vector or `NULL`. For `type = "fevd"`, variables
-#'   to display. The default displays all variables.
-#' @param shock    Integer. Shock to display for IRF, FEVD, counterfactual, and
-#'   error plots. Default: the target shock.
+#' @param variable Integer or `NULL`. Backward-compatible alias for selecting
+#'   one variable. Prefer `variables`. If both are supplied, an error is
+#'   raised.
+#' @param variables Integer vector or `NULL`. Variables to display for IRF,
+#'   FEVD, counterfactual, and historical-decomposition plots. `NULL` displays
+#'   all variables.
+#' @param shock Integer or `NULL`. Shock to display for IRF, FEVD,
+#'   counterfactual, and error plots. The default is the target shock.
 #' @param scaling_index Numeric vector for `type = "irfs"`. See
 #'   [plot_etvar_irfs()].
 #' @param scaling_multiplier Numeric scalar for `type = "irfs"`. Applied
@@ -413,25 +413,21 @@ summary.etvar <- function(object, ...) {
 #' @param event_dates  Date vector for `type = "errors"`. Vertical event
 #'   markers.
 #' @param event_labels Character vector for `type = "errors"`. Event labels.
-#' @param n_tail  Integer. Number of trailing observations for counterfactual
-#'   and error plots. Default 40.
+#' @param n_tail  Integer. Number of trailing observations for counterfactual,
+#'   historical-decomposition, and error plots. Default 40.
 #' @param x_date_breaks Character. Date break spacing for ggplot-based
 #'   date axes (`"counterfactual"`, `"errors"`). Passed to
 #'   [ggplot2::scale_x_date()] (e.g. `"1 week"`, `"2 weeks"`, `"1 month"`).
 #'   Default `"1 week"`.
-#' @param x_break_every Integer. For `type = "hd"` (base-R), show every
+#' @param x_break_every Integer. For `type = "hd"`, show every
 #'   `x_break_every`-th date label on the x-axis. Default 2.
 #' @param merge_target_components Logical. For `type = "hd"`, merge
 #'   the event-date target-shock component and continued target-shock
 #'   component into one bar segment. Default `FALSE`.
-#' @param title Character, `NULL`, or `NA`.
-#'   - `NULL`: use default per-plot title.
-#'   - `NA`: remove title.
-#'   - Character scalar: custom title.
-#'   - Character vector: for multi-panel variable plots, custom titles by
-#'     variable/panel. Named vectors are matched to variable names.
-#'   For `type = "fevd"`, `title` must be a scalar because variable names are
-#'   displayed in facet headings.
+#' @param facet_ncol Integer. Number of columns in faceted variable plots.
+#'   Default 2.
+#' @param title Character scalar, `NULL`, or `NA`. `NULL` uses the default plot
+#'   title, `NA` removes it, and a character scalar supplies a custom title.
 #' @param conf_int Logical. For `type = "irfs"`, draw bootstrap confidence
 #'   intervals around the IRFs. Default `FALSE`.
 #' @param conf_level Numeric. Confidence level used when `conf_int = TRUE`.
@@ -445,13 +441,12 @@ summary.etvar <- function(object, ...) {
 #' @param ci_col Fill colour for IRF confidence bands.
 #' @param ci_border Border colour for IRF confidence bands. Default `NA`.
 #' @param ...     Additional arguments (currently unused).
-#' @return A ggplot object (for `"fevd"`, `"counterfactual"`, and `"errors"`)
-#'   or `NULL` invisibly (for base-R plots).
+#' @return A [ggplot2::ggplot] object.
 #' @export
 plot.etvar <- function(
     x,
     type = c("irfs", "fevd", "hd", "counterfactual", "errors"),
-    variable = 1L,
+    variable = NULL,
     variables = NULL,
     shock = NULL,
     scaling_index = NULL,
@@ -463,6 +458,7 @@ plot.etvar <- function(
     x_date_breaks = "1 week",
     x_break_every = 2L,
     merge_target_components = FALSE,
+    facet_ncol = 2L,
     title = NULL,
     conf_int = FALSE,
     conf_level = 0.95,
@@ -476,11 +472,26 @@ plot.etvar <- function(
     stop("`x` must be an `etvar` object.", call. = FALSE)
   }
   type <- match.arg(type)
-  if (is.null(shock)) shock <- x$shock_index
-  shock <- .etvar_integer_scalar(shock, "shock", min = 1L, max = x$var$n)
-  variable <- .etvar_integer_scalar(variable, "variable",
-                                     min = 1L, max = x$var$n)
+  if (!is.null(variable)) {
+    variable <- .etvar_integer_scalar(variable, "variable",
+                                       min = 1L, max = x$var$n)
+    if (!is.null(variables)) {
+      stop("Use only one of `variable` and `variables`.", call. = FALSE)
+    }
+    variables <- variable
+  }
+  if (identical(type, "errors") && !is.null(variables)) {
+    stop("`variables` does not apply to structural-error plots; use `shock`.",
+         call. = FALSE)
+  }
+  if (!is.null(variables)) {
+    variables <- .etvar_index_vector(variables, "variables", x$var$n)
+  }
+  facet_ncol <- .etvar_integer_scalar(facet_ncol, "facet_ncol", min = 1L)
   conf_int <- .etvar_flag(conf_int, "conf_int")
+  if (is.null(shock)) shock <- x$shock_index
+  shock <- .etvar_integer_scalar(shock, "shock",
+                                 min = 1L, max = x$var$n)
 
   switch(type,
     irfs = {
@@ -500,6 +511,8 @@ plot.etvar <- function(
         scaling_index  = scaling_index,
         scaling_multiplier = scaling_multiplier,
         common_ylim    = common_ylim,
+        variables      = variables,
+        facet_ncol     = facet_ncol,
         title          = title,
         irf_ci         = irf_ci,
         ci_col         = ci_col,
@@ -511,7 +524,8 @@ plot.etvar <- function(
       plot_etvar_fevd(
         fevd = fevd_result,
         variables = variables,
-        title = title
+        title = title,
+        facet_ncol = facet_ncol
       )
     },
     hd = {
@@ -524,43 +538,44 @@ plot.etvar <- function(
         others         = x$shocks$others,
         datestar       = x$datestar,
         variable_names = x$variable_names,
+        variables      = variables,
         n_tail         = n_tail,
         x_break_every  = x_break_every,
         merge_target_components = merge_target_components,
+        facet_ncol     = facet_ncol,
         title          = title
       )
     },
     counterfactual = {
-      cf_title <- etvar_select_panel_title(
-        title          = title,
-        default_titles = x$variable_names,
-        variable_index = variable,
-        panel_index    = 1L,
-        n_panels       = 1L
-      )
       plot_etvar_counterfactual(
         date_vec       = x$dates,
-        realized       = x$data[, variable],
-        counterfactual = x$hd$all_data[, variable, shock],
+        realized       = x$data,
+        counterfactual = x$hd$all_data[, , shock],
+        variable_names = x$variable_names,
+        variables      = variables,
         n_tail         = n_tail,
         x_date_breaks  = x_date_breaks,
-        title          = cf_title
+        facet_ncol     = facet_ncol,
+        title          = title
       )
     },
     errors = {
       err_dates <- x$dates[(x$var$lags + 1):length(x$dates)]
-      err_title <- etvar_select_scalar_title(
-        title         = title,
-        default_title = paste("Structural error - shock", shock)
-      )
+      panel_title <- if (shock == x$shock_index) {
+        paste0("Target shock (", x$shock_index, ")")
+      } else {
+        paste("Shock", shock)
+      }
       plot_etvar_errors(
         date_vec     = err_dates,
         errors       = x$hd$errors_str[, shock],
+        panel_title  = panel_title,
+        line_color   = if (shock == x$shock_index) "#D95319" else "black",
         n_tail       = n_tail,
         event_dates  = event_dates,
         event_labels = event_labels,
         x_date_breaks = x_date_breaks,
-        title        = err_title
+        title        = title
       )
     }
   )
