@@ -65,7 +65,8 @@
 #'     \item{A0}{Matrix (n x n). Structural impact matrix.}
 #'     \item{irfs}{Array (n x n x nimp). Structural IRFs.}
 #'     \item{hd}{Named list from [hist_decomposition_3d()].}
-#'     \item{shocks}{Named list from [rearrange_shocks()].}
+#'     \item{shock_contributions}{Named list of historical shock-contribution
+#'       matrices from [rearrange_shocks()].}
 #'     \item{dates}{Date vector.}
 #'     \item{data}{Original data matrix.}
 #'     \item{target_dates}{Date vector. All targeted event dates.}
@@ -271,7 +272,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
 
   # --- 6. Rearrange shock contributions ---
   T_obs  <- nrow(data)
-  shocks <- rearrange_shocks(
+  shock_contributions <- rearrange_shocks(
     hd$hist_matrix, hd$hist_matrix_stop, T_obs, n, shock_index
   )
 
@@ -282,7 +283,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
     A0             = A0,
     irfs           = irfs,
     hd             = hd,
-    shocks         = shocks,
+    shock_contributions = shock_contributions,
     dates          = dates,
     data           = data,
     target_dates   = target_dates,
@@ -533,9 +534,9 @@ plot.etvar <- function(
         date_vec       = x$dates,
         data           = x$data,
         deterministic  = x$hd$deterministic,
-        target_stop    = x$shocks$target_stop,
-        target_rest    = x$shocks$target_rest,
-        others         = x$shocks$others,
+        target_stop    = x$shock_contributions$target_stop,
+        target_rest    = x$shock_contributions$target_rest,
+        others         = x$shock_contributions$others,
         datestar       = x$datestar,
         variable_names = x$variable_names,
         variables      = variables,

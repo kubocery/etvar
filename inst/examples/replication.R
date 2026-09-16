@@ -111,8 +111,10 @@ hd <- hist_decomposition_3d(
 )
 
 # 7. Rearrange shocks
-shocks <- rearrange_shocks(hd$hist_matrix, hd$hist_matrix_stop,
-                           nrow(data), n, target_shock = 1)
+shock_contributions <- rearrange_shocks(
+  hd$hist_matrix, hd$hist_matrix_stop,
+  nrow(data), n, target_shock = 1
+)
 
 # 8. Standalone plotting functions
 plot_etvar_irfs(irfs, variable_names, shock_index = 1,
@@ -126,8 +128,9 @@ plot_etvar_counterfactual(
 
 plot_etvar_hd(
   date_vec = dates$dates, data = data, deterministic = hd$deterministic,
-  target_stop = shocks$target_stop, target_rest = shocks$target_rest,
-  others = shocks$others, datestar = datestar,
+  target_stop = shock_contributions$target_stop,
+  target_rest = shock_contributions$target_rest,
+  others = shock_contributions$others, datestar = datestar,
   variable_names = variable_names, n_tail = 41,
   shock_labels = c("Liberation Day", "New tariff shocks", "Other shocks")
 )

@@ -119,8 +119,10 @@ test_that("bootstrap intervals and plotters handle fitted output", {
     variable_names = fit$variable_names
   )
   hd_plot <- plot_etvar_hd(
-    dates, data, fit$hd$deterministic, fit$shocks$target_stop,
-    fit$shocks$target_rest, fit$shocks$others, fit$datestar,
+    dates, data, fit$hd$deterministic,
+    fit$shock_contributions$target_stop,
+    fit$shock_contributions$target_rest,
+    fit$shock_contributions$others, fit$datestar,
     fit$variable_names, ask = FALSE, variables = 2L
   )
   error_plot <- plot_etvar_errors(

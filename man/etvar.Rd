@@ -98,7 +98,8 @@ An S3 object of class \code{"etvar"} containing:
 \item{A0}{Matrix (n x n). Structural impact matrix.}
 \item{irfs}{Array (n x n x nimp). Structural IRFs.}
 \item{hd}{Named list from \code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}.}
-\item{shocks}{Named list from \code{\link[=rearrange_shocks]{rearrange_shocks()}}.}
+\item{shock_contributions}{Named list of historical shock-contribution
+matrices from \code{\link[=rearrange_shocks]{rearrange_shocks()}}.}
 \item{dates}{Date vector.}
 \item{data}{Original data matrix.}
 \item{target_dates}{Date vector. All targeted event dates.}

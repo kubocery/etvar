@@ -129,9 +129,10 @@ hd_window <- hist_decomposition_3d(
 )
 
 # 7. Rearrange shocks
-shocks_window <- rearrange_shocks(hd_window$hist_matrix,
-                                  hd_window$hist_matrix_stop,
-                                  nrow(data), n, target_shock = 1)
+shock_contributions_window <- rearrange_shocks(
+  hd_window$hist_matrix, hd_window$hist_matrix_stop,
+  nrow(data), n, target_shock = 1
+)
 
 # 8. Standalone plots
 plot_etvar_irfs(irfs_window, variable_names, shock_index = 1,
@@ -149,9 +150,9 @@ plot_etvar_hd(
   date_vec       = dates,
   data           = data,
   deterministic  = hd_window$deterministic,
-  target_stop    = shocks_window$target_stop,
-  target_rest    = shocks_window$target_rest,
-  others         = shocks_window$others,
+  target_stop    = shock_contributions_window$target_stop,
+  target_rest    = shock_contributions_window$target_rest,
+  others         = shock_contributions_window$others,
   datestar       = datestar,
   variable_names = variable_names,
   n_tail         = 41,

@@ -323,7 +323,7 @@ plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
                                x_date_breaks = "1 week",
                                title = NULL,
                                panel_title = NULL,
-                               line_color = "black") {
+                               line_color = "#D95319") {
   date_vec <- .etvar_as_date(date_vec, "date_vec")
   n_tail <- .etvar_integer_scalar(n_tail, "n_tail", min = 1L)
   if (!is.numeric(errors) || !is.null(dim(errors)) ||
