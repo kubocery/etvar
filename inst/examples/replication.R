@@ -36,7 +36,7 @@ fit <- etvar(
   data           = data,
   dates          = dates$dates,
   target_date    = "2025-04-03",
-  lags           = 8,
+  lags           = 1,
   constant       = as.logical(example$constant),
   trend          = example$trend,
   shock_index    = 1,
@@ -69,7 +69,7 @@ plot(fit, type = "errors", shock = 1, n_tail = 100,
      event_labels = c("Liberation Day", "90-day pause", "China-US truce"))
 
 # Historical decomposition stacked bar charts (all variables)
-plot(fit, type = "hd", n_tail = 41, variable = 2)
+plot(fit, type = "hd", n_tail = 41)
 
 
 # =========================================================================
