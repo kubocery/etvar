@@ -61,6 +61,30 @@ test_that("public estimators reject invalid scalar and data inputs", {
   expect_identical(euler_rotation(numeric(), 1L), matrix(1, 1L, 1L))
 })
 
+test_that("verbose sequential optimisation enables live optim tracing", {
+  data <- make_core_test_data(n_obs = 45L)
+  var_est <- estimate_var(data, lags = 2L, nimp_wold = 3L)
+
+  output <- capture.output(
+    suppressWarnings(
+      etvar_optimize(
+        start = 0,
+        var_est = var_est,
+        target_obs = 30L,
+        control_nm = list(reltol = 1e-6, maxit = 1L, trace = 0),
+        control_bfgs = list(
+          reltol = 1e-6, maxit = 1L, trace = 0, REPORT = 1L
+        ),
+        verbose = TRUE
+      )
+    )
+  )
+
+  expect_true(any(grepl("Nelder-Mead direct search", output, fixed = TRUE)))
+  expect_true(any(grepl("initial", output, fixed = TRUE)))
+  expect_true(any(grepl("value", output, fixed = TRUE)))
+})
+
 test_that("etvar computes as many Wold horizons as requested", {
   data <- make_core_test_data()
   dates <- seq.Date(as.Date("2021-01-01"), by = "day", length.out = nrow(data))

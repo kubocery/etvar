@@ -46,7 +46,9 @@ used when multiple starts are generated (\code{start = NULL} and
 resource limits. On Windows a PSOCK cluster is used; on Unix-like systems
 forking via \code{\link[parallel:mclapply]{parallel::mclapply()}} is used.}
 
-\item{verbose}{Logical. Print progress messages? Default \code{TRUE}.}
+\item{verbose}{Logical. Print progress messages? Default \code{TRUE}. For
+sequential runs, this also enables \code{\link[=optim]{optim()}} tracing when \code{trace} is
+absent or zero. Set \code{verbose = FALSE} to suppress optimiser output.}
 }
 \value{
 Named list with \code{par} (optimal angles), \code{value} (best objective),

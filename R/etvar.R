@@ -56,6 +56,8 @@
 #'   optimisation. Only used when `start_angles = NULL` and `n_starts > 1`.
 #'   Default 1 (sequential); the maximum is 2.
 #' @param verbose        Logical. Print progress messages? Default `TRUE`.
+#'   Sequential optimisation also displays the live [optim()] objective trace.
+#'   Set to `FALSE` to suppress optimiser output.
 #' @return An S3 object of class `"etvar"` containing:
 #'   \describe{
 #'     \item{var}{`etvar_var` object. Reduced-form VAR estimates.}

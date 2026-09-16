@@ -76,7 +76,9 @@ If \code{NULL}, uses column names of \code{data} or \verb{V1, V2, ...}.}
 optimisation. Only used when \code{start_angles = NULL} and \code{n_starts > 1}.
 Default 1 (sequential); the maximum is 2.}
 
-\item{verbose}{Logical. Print progress messages? Default \code{TRUE}.}
+\item{verbose}{Logical. Print progress messages? Default \code{TRUE}.
+Sequential optimisation also displays the live \code{\link[=optim]{optim()}} objective trace.
+Set to \code{FALSE} to suppress optimiser output.}
 
 \item{start_date}{Date, character, or \code{NULL}. Inclusive start of the
 sample used to estimate the initial reduced-form VAR. The fitted VAR is

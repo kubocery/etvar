@@ -33,7 +33,9 @@
 #'   `n_starts > 1`). Default 1 (sequential); the maximum is 2 to respect CRAN
 #'   resource limits. On Windows a PSOCK cluster is used; on Unix-like systems
 #'   forking via [parallel::mclapply()] is used.
-#' @param verbose Logical. Print progress messages? Default `TRUE`.
+#' @param verbose Logical. Print progress messages? Default `TRUE`. For
+#'   sequential runs, this also enables [optim()] tracing when `trace` is
+#'   absent or zero. Set `verbose = FALSE` to suppress optimiser output.
 #' @return Named list with `par` (optimal angles), `value` (best objective),
 #'   `convergence` (0 indicates successful convergence), and `stage` (the
 #'   optimisation stage that produced the best value).
@@ -173,6 +175,20 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
 
   } else {
     # --- Sequential execution ---
+
+    # Preserve the original package behaviour: verbose sequential runs show
+    # the objective values emitted by optim() while each stage is running.
+    if (verbose) {
+      if (is.null(control_nm$trace) || control_nm$trace == 0) {
+        control_nm$trace <- 1
+      }
+      if (is.null(control_bfgs$trace) || control_bfgs$trace == 0) {
+        control_bfgs$trace <- 1
+      }
+      if (is.null(control_bfgs$REPORT)) {
+        control_bfgs$REPORT <- 1
+      }
+    }
 
     obj_fn <- function(theta) {
       etvar_objective(theta, var_est, target_obs, shock_index)
