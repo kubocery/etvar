@@ -61,7 +61,8 @@ Named list with \code{par} (the \code{n - 1} optimal target-direction angles),
 \code{target_direction} (the corresponding unit vector), \code{rotation} (a
 deterministic orthogonal completion), \code{value} (best objective),
 \code{convergence} (0 indicates successful convergence), \code{stage} (the
-optimisation stage that produced the best value), and \code{parameterization}.
+optimisation stage that produced the best value), \code{optimization} (full
+optimiser diagnostics), and \code{parameterization}.
 }
 \description{
 Runs a three-stage optimisation alternating between Nelder-Mead (simplex)

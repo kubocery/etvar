@@ -50,7 +50,8 @@
 #'   `target_direction` (the corresponding unit vector), `rotation` (a
 #'   deterministic orthogonal completion), `value` (best objective),
 #'   `convergence` (0 indicates successful convergence), `stage` (the
-#'   optimisation stage that produced the best value), and `parameterization`.
+#'   optimisation stage that produced the best value), `optimization` (full
+#'   optimiser diagnostics), and `parameterization`.
 #' @export
 etvar_optimize <- function(start = NULL, var_est, target_obs,
                            shock_index = 1L,
@@ -62,6 +63,7 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
                            n_cores = 1L,
                            verbose = TRUE,
                            start_parameterization = c("auto", "target", "full")) {
+  optimization_start_time <- proc.time()[["elapsed"]]
   if (!inherits(var_est, "etvar_var")) {
     stop("`var_est` must be an `etvar_var` object from `estimate_var()`.",
          call. = FALSE)
@@ -116,39 +118,133 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     var_est, target_obs, shock_index
   )
 
+  convergence_message <- function(code, message = NULL) {
+    if (!is.null(message) && length(message) > 0L && !is.na(message[1L])) {
+      return(as.character(message[1L]))
+    }
+    switch(as.character(code),
+      "0" = "Successful convergence.",
+      "1" = "Iteration limit reached.",
+      "10" = "Degeneracy of the Nelder-Mead simplex.",
+      "51" = "Warning from L-BFGS-B.",
+      "52" = "Error from L-BFGS-B.",
+      paste0("optim returned convergence code ", code, ".")
+    )
+  }
+
+  count_value <- function(counts, name) {
+    if (is.null(counts) || is.null(names(counts)) ||
+        !(name %in% names(counts))) {
+      return(NA_integer_)
+    }
+    as.integer(unname(counts[[name]]))
+  }
+
+  stage_record <- function(start_index, stage, method, opt, elapsed_seconds) {
+    data.frame(
+      start = as.integer(start_index),
+      stage = as.character(stage),
+      method = as.character(method),
+      objective = as.numeric(opt$value),
+      convergence = as.integer(opt$convergence),
+      message = convergence_message(opt$convergence, opt$message),
+      fn_evaluations = count_value(opt$counts, "function"),
+      gr_evaluations = count_value(opt$counts, "gradient"),
+      elapsed_seconds = as.numeric(elapsed_seconds),
+      stringsAsFactors = FALSE
+    )
+  }
+
+  timed_optim <- function(par, fn, method, control) {
+    stage_start_time <- proc.time()[["elapsed"]]
+    opt <- stats::optim(par, fn, method = method, control = control)
+    list(
+      opt = opt,
+      elapsed_seconds = proc.time()[["elapsed"]] - stage_start_time
+    )
+  }
+
   # --- Worker function: three-stage optimisation for a single start ---
   run_three_stage <- function(init, objective_context,
-                              control_nm, control_bfgs) {
+                              control_nm, control_bfgs,
+                              start_index = 1L) {
+    start_time <- proc.time()[["elapsed"]]
     obj_fn <- function(theta) {
       .etvar_objective_prepared(
         theta, objective_context, parameterization = "target"
       )
     }
-    opt1 <- stats::optim(init, obj_fn, method = "Nelder-Mead",
-                         control = control_nm)
-    opt2 <- stats::optim(opt1$par, obj_fn, method = "BFGS",
-                         control = control_bfgs)
-    opt3 <- stats::optim(opt2$par, obj_fn, method = "Nelder-Mead",
-                         control = control_nm)
+    opt1_timed <- timed_optim(init, obj_fn, "Nelder-Mead", control_nm)
+    opt1 <- opt1_timed$opt
+    opt2_timed <- timed_optim(opt1$par, obj_fn, "BFGS", control_bfgs)
+    opt2 <- opt2_timed$opt
+    opt3_timed <- timed_optim(opt2$par, obj_fn, "Nelder-Mead", control_nm)
+    opt3 <- opt3_timed$opt
     candidates <- list(stage1 = opt1, stage2 = opt2, stage3 = opt3)
+    records <- rbind(
+      stage_record(start_index, "stage1", "Nelder-Mead", opt1,
+                   opt1_timed$elapsed_seconds),
+      stage_record(start_index, "stage2", "BFGS", opt2,
+                   opt2_timed$elapsed_seconds),
+      stage_record(start_index, "stage3", "Nelder-Mead", opt3,
+                   opt3_timed$elapsed_seconds)
+    )
     values <- vapply(candidates, function(x) x$value, numeric(1))
     best_stage <- which.min(values)
     best <- candidates[[best_stage]]
     list(par = best$par, value = best$value,
-         convergence = best$convergence, stage = names(candidates)[best_stage])
+         convergence = best$convergence,
+         message = convergence_message(best$convergence, best$message),
+         stage = names(candidates)[best_stage],
+         start = as.integer(start_index),
+         records = records,
+         elapsed_seconds = proc.time()[["elapsed"]] - start_time)
   }
 
   if (n_par == 0L) {
+    objective_start_time <- proc.time()[["elapsed"]]
+    objective_value <- .etvar_objective_prepared(
+      numeric(), objective_context, parameterization = "target"
+    )
+    elapsed_seconds <- proc.time()[["elapsed"]] - objective_start_time
+    objective_by_start_stage <- data.frame(
+      start = 1L,
+      stage = "none",
+      method = NA_character_,
+      objective = as.numeric(objective_value),
+      convergence = 0L,
+      message = "No free rotation parameters.",
+      fn_evaluations = 1L,
+      gr_evaluations = 0L,
+      elapsed_seconds = as.numeric(elapsed_seconds),
+      stringsAsFactors = FALSE
+    )
+    total_elapsed <- proc.time()[["elapsed"]] - optimization_start_time
     rotation <- matrix(1, 1L, 1L)
     return(list(
       par = numeric(),
       target_direction = 1,
       rotation = rotation,
-      value = .etvar_objective_prepared(
-        numeric(), objective_context, parameterization = "target"
-      ),
+      value = objective_value,
       convergence = 0L,
+      message = "No free rotation parameters.",
       stage = "none",
+      start = 1L,
+      optimization = list(
+        convergence = 0L,
+        message = "No free rotation parameters.",
+        selected_stage = "none",
+        selected_start = 1L,
+        objective_by_start_stage = objective_by_start_stage,
+        n_evaluations = 1L,
+        n_gradient_evaluations = 0L,
+        elapsed_seconds = as.numeric(total_elapsed),
+        controls = list(nelder_mead = control_nm, bfgs = control_bfgs,
+                        n_cores = n_cores, parallel = FALSE),
+        seed = seed,
+        n_starts = length(starts),
+        start_values = matrix(numeric(), nrow = 1L, ncol = 0L)
+      ),
       parameterization = "target_direction"
     ))
   }
@@ -171,9 +267,10 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
 
     if (.Platform$OS.type == "unix") {
       # Fork-based parallelism (not available on Windows)
-      results <- parallel::mclapply(starts, function(init) {
+      results <- parallel::mclapply(seq_along(starts), function(i) {
+        init <- starts[[i]]
         run_three_stage(init, objective_context,
-                        ctrl_nm_quiet, ctrl_bfgs_quiet)
+                        ctrl_nm_quiet, ctrl_bfgs_quiet, i)
       }, mc.cores = n_cores, mc.set.seed = TRUE)
     } else {
       # PSOCK cluster (Windows-compatible)
@@ -189,12 +286,13 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
       # Export objects needed by the worker function
       parallel::clusterExport(cl, varlist = c(
         "run_three_stage", "objective_context",
-        "ctrl_nm_quiet", "ctrl_bfgs_quiet"
+        "ctrl_nm_quiet", "ctrl_bfgs_quiet", "starts"
       ), envir = environment())
 
-      results <- parallel::parLapply(cl, starts, function(init) {
+      results <- parallel::parLapply(cl, seq_along(starts), function(i) {
+        init <- starts[[i]]
         run_three_stage(init, objective_context,
-                        ctrl_nm_quiet, ctrl_bfgs_quiet)
+                        ctrl_nm_quiet, ctrl_bfgs_quiet, i)
       })
     }
 
@@ -202,6 +300,7 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     values <- vapply(results, function(r) r$value, numeric(1))
     best_idx <- which.min(values)
     best <- results[[best_idx]]
+    objective_by_start_stage <- do.call(rbind, lapply(results, `[[`, "records"))
 
     if (verbose) {
       cat(sprintf("Best objective across %d starts: %g (start #%d)\n",
@@ -231,7 +330,10 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
       )
     }
 
-    best <- list(par = NULL, value = Inf, convergence = 1L, stage = NA_character_)
+    best <- list(par = NULL, value = Inf, convergence = 1L,
+                 message = NA_character_, stage = NA_character_,
+                 start = NA_integer_)
+    records <- vector("list", length(starts))
 
     for (s in seq_along(starts)) {
       init <- starts[[s]]
@@ -240,23 +342,31 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
       }
 
       if (verbose) cat("Stage 1/3: Nelder-Mead ...\n")
-      opt1 <- stats::optim(init, obj_fn, method = "Nelder-Mead",
-                            control = control_nm)
+      opt1_timed <- timed_optim(init, obj_fn, "Nelder-Mead", control_nm)
+      opt1 <- opt1_timed$opt
       if (verbose) cat("  Objective:", opt1$value, "\n")
 
       if (verbose) cat("Stage 2/3: BFGS ...\n")
-      opt2 <- stats::optim(opt1$par, obj_fn, method = "BFGS",
-                            control = control_bfgs)
+      opt2_timed <- timed_optim(opt1$par, obj_fn, "BFGS", control_bfgs)
+      opt2 <- opt2_timed$opt
       if (verbose) cat("  Objective:", opt2$value, "\n")
 
       if (verbose) cat("Stage 3/3: Nelder-Mead refinement ...\n")
-      opt3 <- stats::optim(opt2$par, obj_fn, method = "Nelder-Mead",
-                            control = control_nm)
+      opt3_timed <- timed_optim(opt2$par, obj_fn, "Nelder-Mead", control_nm)
+      opt3 <- opt3_timed$opt
       if (verbose) {
         cat("  Final objective:", opt3$value, "\n")
       }
 
       candidates <- list(stage1 = opt1, stage2 = opt2, stage3 = opt3)
+      records[[s]] <- rbind(
+        stage_record(s, "stage1", "Nelder-Mead", opt1,
+                     opt1_timed$elapsed_seconds),
+        stage_record(s, "stage2", "BFGS", opt2,
+                     opt2_timed$elapsed_seconds),
+        stage_record(s, "stage3", "Nelder-Mead", opt3,
+                     opt3_timed$elapsed_seconds)
+      )
       values <- vapply(candidates, function(x) x$value, numeric(1))
       best_stage <- which.min(values)
       candidate <- candidates[[best_stage]]
@@ -270,14 +380,50 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
       if (candidate$value < best$value) {
         best <- list(par = candidate$par, value = candidate$value,
                      convergence = candidate$convergence,
-                     stage = names(candidates)[best_stage])
+                     message = convergence_message(
+                       candidate$convergence, candidate$message
+                     ),
+                     stage = names(candidates)[best_stage],
+                     start = as.integer(s))
       }
     }
+    objective_by_start_stage <- do.call(rbind, records)
 
     if (verbose && length(starts) > 1L) {
       cat(sprintf("Best objective across %d starts: %g\n",
                   length(starts), best$value))
     }
+  }
+
+  fn_evaluations <- objective_by_start_stage$fn_evaluations
+  gr_evaluations <- objective_by_start_stage$gr_evaluations
+  total_elapsed <- proc.time()[["elapsed"]] - optimization_start_time
+  start_values <- do.call(rbind, starts)
+  if (is.null(dim(start_values))) {
+    start_values <- matrix(start_values, nrow = length(starts), byrow = TRUE)
+  }
+  colnames(start_values) <- paste0("angle", seq_len(ncol(start_values)))
+
+  best$optimization <- list(
+    convergence = as.integer(best$convergence),
+    message = as.character(best$message),
+    selected_stage = as.character(best$stage),
+    selected_start = as.integer(best$start),
+    objective_by_start_stage = objective_by_start_stage,
+    n_evaluations = as.integer(sum(fn_evaluations, na.rm = TRUE)),
+    n_gradient_evaluations = as.integer(sum(gr_evaluations, na.rm = TRUE)),
+    elapsed_seconds = as.numeric(total_elapsed),
+    controls = list(nelder_mead = control_nm, bfgs = control_bfgs,
+                    n_cores = n_cores, parallel = use_parallel),
+    seed = seed,
+    n_starts = length(starts),
+    start_values = start_values
+  )
+
+  if (!identical(as.integer(best$convergence), 0L)) {
+    warning("ETVAR optimisation returned nonzero convergence code ",
+            best$convergence, " at ", best$stage, " of start ",
+            best$start, ": ", best$message, call. = FALSE)
   }
 
   best$target_direction <- .etvar_direction_from_angles(

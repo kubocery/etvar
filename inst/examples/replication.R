@@ -41,8 +41,8 @@ fit <- etvar(
   trend          = example$trend,
   shock_index    = 1,
   n_starts = 1,
-  start_angles   = theta_start,
-  optimize       = FALSE,    # Set TRUE to re-run optimisation
+ # start_angles   = theta_start,
+  optimize       = TRUE,    # Set TRUE to re-run optimisation
   nimp           = 30,
   variable_names = variable_names,
   verbose        = TRUE

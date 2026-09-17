@@ -127,6 +127,10 @@ used to estimate the initial VAR.}
 \item{shock_index}{Which shock was targeted.}
 \item{variable_names}{Character vector of variable names.}
 \item{objective}{Final value of the objective function.}
+\item{optimization}{Named list with optimiser diagnostics: convergence
+code and message, selected start and stage, objective values by start
+and stage, evaluation counts, elapsed time, controls, random seed, and
+starting values.}
 }
 }
 \description{

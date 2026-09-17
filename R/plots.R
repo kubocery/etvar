@@ -314,8 +314,7 @@ plot_etvar_counterfactual <- function(date_vec, realized, counterfactual,
 #' @param panel_title Character scalar or `NULL`. Label displayed in the facet
 #'   strip. `NULL` uses `"Target shock"`.
 #' @param line_color Character scalar. Colour of the structural-error line.
-#'   Default `"#D95319"`, matching the target-shock colour in FEVD and
-#'   historical-decomposition plots.
+#'   Default `"black"`.
 #' @return A [ggplot2::ggplot] object.
 #' @export
 plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
@@ -323,7 +322,7 @@ plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
                                x_date_breaks = "1 week",
                                title = NULL,
                                panel_title = NULL,
-                               line_color = "#D95319") {
+                               line_color = "black") {
   date_vec <- .etvar_as_date(date_vec, "date_vec")
   n_tail <- .etvar_integer_scalar(n_tail, "n_tail", min = 1L)
   if (!is.numeric(errors) || !is.null(dim(errors)) ||
@@ -581,7 +580,9 @@ plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
 #' For each variable, produces a stacked bar chart showing the contributions of
 #' (1) the event-date target shock, (2) continued target shocks after the event,
 #' and (3) all other shocks. The actual detrended data is overlaid as a black
-#' line, and a vertical red line marks the event date.
+#' line, and a vertical red line marks the event date. Within the positive and
+#' negative parts of each bar, the event shock is stacked from zero, followed
+#' by continued target shocks and then all other shocks.
 #'
 #' @param date_vec         Date vector of length T.
 #' @param data             Matrix (T x n). Observed data.
@@ -736,7 +737,11 @@ plot_etvar_hd <- function(date_vec, data, deterministic, target_stop,
     component_data,
     ggplot2::aes(x = dates, y = Value, fill = Component)
   ) +
-    ggplot2::geom_col(width = 0.8, colour = NA) +
+    ggplot2::geom_col(
+      width = 0.8,
+      colour = NA,
+      position = ggplot2::position_stack(reverse = TRUE)
+    ) +
     ggplot2::geom_hline(yintercept = 0, linewidth = 0.4) +
     ggplot2::geom_line(
       data = line_data,

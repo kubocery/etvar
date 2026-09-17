@@ -211,6 +211,64 @@ test_that("optimiser returns n - 1 parameters and a valid completion", {
   expect_equal(crossprod(result$rotation), diag(3L), tolerance = 1e-12)
   expect_equal(det(result$rotation), 1, tolerance = 1e-12)
   expect_identical(result$parameterization, "target_direction")
+  expect_named(result$optimization, c(
+    "convergence", "message", "selected_stage", "selected_start",
+    "objective_by_start_stage", "n_evaluations", "n_gradient_evaluations",
+    "elapsed_seconds", "controls", "seed", "n_starts", "start_values"
+  ))
+  expect_s3_class(result$optimization$objective_by_start_stage, "data.frame")
+  expect_setequal(
+    names(result$optimization$objective_by_start_stage),
+    c("start", "stage", "method", "objective", "convergence", "message",
+      "fn_evaluations", "gr_evaluations", "elapsed_seconds")
+  )
+  expect_equal(nrow(result$optimization$objective_by_start_stage), 3L)
+  expect_identical(
+    result$optimization$selected_stage,
+    result$stage
+  )
+  expect_identical(
+    result$optimization$selected_start,
+    result$start
+  )
+  expect_true(result$optimization$n_evaluations >= 1L)
+  expect_true(is.numeric(result$optimization$elapsed_seconds))
+  expect_equal(dim(result$optimization$start_values), c(1L, 2L))
+})
+
+test_that("etvar retains optimisation diagnostics and warns on nonzero convergence", {
+  set.seed(407)
+  data <- matrix(stats::rnorm(165L), ncol = 3L)
+  dates <- seq.Date(as.Date("2021-01-01"), by = "day", length.out = nrow(data))
+
+  fit <- NULL
+  expect_warning(
+    fit <- etvar(
+      data, dates, target_date = dates[45L], lags = 2L,
+      control_nm = list(reltol = 1e-4, maxit = 1L, trace = 0),
+      control_bfgs = list(reltol = 1e-4, maxit = 1L, trace = 0,
+                          REPORT = 1L),
+      nimp = 4L, verbose = FALSE
+    ),
+    "nonzero convergence code"
+  )
+
+  expect_s3_class(fit, "etvar")
+  selected_row <- fit$optimization$objective_by_start_stage$start ==
+    fit$optimization$selected_start &
+    fit$optimization$objective_by_start_stage$stage ==
+      fit$optimization$selected_stage
+  expect_true(any(selected_row))
+  expect_equal(
+    fit$optimization$objective_by_start_stage$objective[selected_row][1L],
+    fit$objective
+  )
+  expect_identical(
+    fit$optimization$convergence,
+    fit$optimization$objective_by_start_stage$convergence[selected_row][1L]
+  )
+  expect_false(identical(fit$optimization$convergence, 0L))
+  expect_true(nchar(fit$optimization$message) > 0L)
 })
 
 test_that("etvar computes as many Wold horizons as requested", {
@@ -268,6 +326,40 @@ test_that("bootstrap intervals and plotters handle fitted output", {
   expect_identical(levels(error_plot$data$Shock), "Target shock")
 })
 
+test_that("historical decomposition stacks the event shock from zero", {
+  skip_if_not_installed("ggplot2")
+
+  dates <- as.Date(c("2025-04-03", "2025-04-04"))
+  zero <- matrix(0, nrow = 2L, ncol = 1L)
+  event <- matrix(c(1, -1), ncol = 1L)
+  continued <- matrix(c(2, -2), ncol = 1L)
+  others <- matrix(c(3, -3), ncol = 1L)
+
+  plot <- plot_etvar_hd(
+    date_vec = dates,
+    data = event + continued + others,
+    deterministic = zero,
+    target_stop = event,
+    target_rest = continued,
+    others = others,
+    datestar = 1L,
+    variable_names = "y1",
+    n_tail = 2L
+  )
+  bars <- ggplot2::ggplot_build(plot)$data[[1L]]
+
+  event_bars <- bars[bars$fill == "#D95319", , drop = FALSE]
+  continued_bars <- bars[bars$fill == "#EDB120", , drop = FALSE]
+  other_bars <- bars[bars$fill == "#4DBEEE", , drop = FALSE]
+
+  expect_equal(event_bars$ymin, c(0, -1))
+  expect_equal(event_bars$ymax, c(1, 0))
+  expect_equal(continued_bars$ymin, c(1, -3))
+  expect_equal(continued_bars$ymax, c(3, -1))
+  expect_equal(other_bars$ymin, c(3, -6))
+  expect_equal(other_bars$ymax, c(6, -3))
+})
+
 test_that("plot.etvar uses consistent faceted selection interfaces", {
   skip_if_not_installed("ggplot2")
   data <- make_core_test_data()
@@ -296,7 +388,7 @@ test_that("plot.etvar uses consistent faceted selection interfaces", {
     "Target shock (1)"
   )
   expect_identical(target_error$labels$title, "Structural error")
-  expect_identical(target_error$layers[[2L]]$aes_params$colour, "#D95319")
+  expect_identical(target_error$layers[[2L]]$aes_params$colour, "black")
   legacy_error <- plot(fit, type = "errors", shock = 1L)
   expect_identical(levels(legacy_error$data$Shock), "Target shock (1)")
 

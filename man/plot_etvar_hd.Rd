@@ -76,5 +76,7 @@ A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 For each variable, produces a stacked bar chart showing the contributions of
 (1) the event-date target shock, (2) continued target shocks after the event,
 and (3) all other shocks. The actual detrended data is overlaid as a black
-line, and a vertical red line marks the event date.
+line, and a vertical red line marks the event date. Within the positive and
+negative parts of each bar, the event shock is stacked from zero, followed
+by continued target shocks and then all other shocks.
 }

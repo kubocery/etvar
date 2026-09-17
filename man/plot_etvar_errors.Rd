@@ -13,7 +13,7 @@ plot_etvar_errors(
   x_date_breaks = "1 week",
   title = NULL,
   panel_title = NULL,
-  line_color = "#D95319"
+  line_color = "black"
 )
 }
 \arguments{
@@ -39,8 +39,7 @@ Default \code{"1 week"}.}
 strip. \code{NULL} uses \code{"Target shock"}.}
 
 \item{line_color}{Character scalar. Colour of the structural-error line.
-Default \code{"#D95319"}, matching the target-shock colour in FEVD and
-historical-decomposition plots.}
+Default \code{"black"}.}
 }
 \value{
 A \link[ggplot2:ggplot]{ggplot2::ggplot} object.

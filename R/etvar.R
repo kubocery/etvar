@@ -99,6 +99,10 @@
 #'     \item{shock_index}{Which shock was targeted.}
 #'     \item{variable_names}{Character vector of variable names.}
 #'     \item{objective}{Final value of the objective function.}
+#'     \item{optimization}{Named list with optimiser diagnostics: convergence
+#'       code and message, selected start and stage, objective values by start
+#'       and stage, evaluation counts, elapsed time, controls, random seed, and
+#'       starting values.}
 #'   }
 #' @export
 #' @examples
@@ -261,6 +265,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
     theta_opt <- opt$par
     Q <- opt$rotation
     obj_value <- opt$value
+    optimization <- opt$optimization
   } else {
     if (is.null(target_start)) {
       cholesky_direction <- numeric(n)
@@ -271,9 +276,39 @@ etvar <- function(data, dates, target_date, lags = 8L,
     }
     theta_opt <- target_start
     Q <- .etvar_target_rotation(theta_opt, n, shock_index)
+    objective_start_time <- proc.time()[["elapsed"]]
     obj_value <- etvar_objective(
       theta_opt, var_est, target_eff, shock_index,
       parameterization = "target"
+    )
+    objective_elapsed <- proc.time()[["elapsed"]] - objective_start_time
+    start_values <- matrix(theta_opt, nrow = 1L)
+    colnames(start_values) <- paste0("angle", seq_len(ncol(start_values)))
+    optimization <- list(
+      convergence = 0L,
+      message = "Optimization skipped; objective evaluated at supplied target-direction angles.",
+      selected_stage = "not_optimized",
+      selected_start = NA_integer_,
+      objective_by_start_stage = data.frame(
+        start = NA_integer_,
+        stage = "not_optimized",
+        method = NA_character_,
+        objective = as.numeric(obj_value),
+        convergence = 0L,
+        message = "Optimization skipped.",
+        fn_evaluations = 1L,
+        gr_evaluations = 0L,
+        elapsed_seconds = as.numeric(objective_elapsed),
+        stringsAsFactors = FALSE
+      ),
+      n_evaluations = 1L,
+      n_gradient_evaluations = 0L,
+      elapsed_seconds = as.numeric(objective_elapsed),
+      controls = list(nelder_mead = control_nm, bfgs = control_bfgs,
+                      n_cores = n_cores, parallel = FALSE),
+      seed = seed,
+      n_starts = 0L,
+      start_values = start_values
     )
     if (verbose) cat("Using supplied angles. Objective:", obj_value, "\n")
   }
@@ -327,7 +362,8 @@ etvar <- function(data, dates, target_date, lags = 8L,
     datestar       = datestar,
     shock_index    = shock_index,
     variable_names = variable_names,
-    objective      = obj_value
+    objective      = obj_value,
+    optimization   = optimization
   ), class = "etvar")
 }
 
@@ -603,7 +639,7 @@ plot.etvar <- function(
         date_vec     = err_dates,
         errors       = x$hd$errors_str[, shock],
         panel_title  = panel_title,
-        line_color   = if (shock == x$shock_index) "#D95319" else "black",
+        line_color   = "black",
         n_tail       = n_tail,
         event_dates  = event_dates,
         event_labels = event_labels,
