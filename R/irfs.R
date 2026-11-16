@@ -103,7 +103,8 @@ simulate_var_residual_bootstrap <- function(var_est) {
 #' @param object An `etvar` object.
 #' @param level Numeric. Confidence level. Default `0.95`.
 #' @param n_boot Integer. Number of successful bootstrap draws. Default `500`.
-#' @param seed Integer or `NULL`. Optional random seed.
+#' @param seed Integer or `NULL`. Optional random seed. The caller's
+#'   random-number state is restored on exit.
 #' @param nimp Integer or `NULL`. Number of IRF horizons. Default: the number
 #'   of horizons stored in `object$irfs`.
 #' @param max_attempts Integer. Maximum bootstrap attempts. Extra attempts are
@@ -135,7 +136,11 @@ compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
                                   max = .Machine$integer.max)
   }
 
-  if (!is.null(seed)) set.seed(seed)
+  if (!is.null(seed)) {
+    old_rng <- .etvar_get_rng()
+    on.exit(.etvar_restore_rng(old_rng), add = TRUE)
+    set.seed(seed)
+  }
 
   n <- object$var$n
   if (!is.null(object$rotation) &&

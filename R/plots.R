@@ -50,7 +50,7 @@ etvar_select_scalar_title <- function(title, default_title, arg = "title") {
 #'   title.
 #' @param component_labels Character vector of length two. Labels for the target
 #'   shock and all other shocks, respectively.
-#' @param colors Character vector of length two. Fill colors for the target
+#' @param colors Character vector of length two. Fill colours for the target
 #'   shock and all other shocks, respectively.
 #' @param facet_ncol Integer. Number of columns in the faceted display.
 #'   Default 2.

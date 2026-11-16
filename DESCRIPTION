@@ -1,20 +1,23 @@
 Package: etvar
 Title: Event-Targeted Vector Autoregression
 Version: 0.1.0
-Authors@R: 
-    person("Gabor", "Pinter", role = c("aut", "cre"),
-           email = "gabor.pinter@example.com")
-Author: Gabor Pinter [aut, cre]
-Maintainer: Gabor Pinter <gabor.pinter@example.com>
+Authors@R:
+    person("Jakub", "Cery", role = c("aut", "cre"),
+           email = "jakub.cery@euba.sk")
 Description: Estimates structural vector autoregressive (VAR) models identified
-    by targeting one or more event dates. The package finds the orthogonal
-    rotation of the Cholesky factor that best explains observed movements on
-    the event dates using a single structural shock. It provides tools for
-    impulse response analysis, structural forecast error variance
-    decomposition, historical decomposition (including counterfactual
-    intervention paths), and diagnostic plots.
+    by targeting one or more event dates, following the event-targeted VAR
+    approach of Pinter, Smets and Üslü (2025)
+    <https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach>.
+    The package finds the orthogonal rotation of the Cholesky factor that best
+    explains observed movements on the event dates using a single structural
+    shock. It provides tools for impulse response analysis, structural
+    forecast error variance decomposition, historical decomposition
+    (including counterfactual intervention paths), and diagnostic plots.
 License: MIT + file LICENSE
+URL: https://github.com/kubocery/etvar
+BugReports: https://github.com/kubocery/etvar/issues
 Encoding: UTF-8
+Language: en-GB
 Depends:
     R (>= 3.5.0)
 Roxygen: list(markdown = TRUE)
@@ -25,6 +28,7 @@ Imports:
     ggplot2 (>= 3.4.0),
     utils
 Suggests:
+    spelling,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0

@@ -118,3 +118,23 @@
   list(A0 = A0, ALPHA = ALPHA, Y = Y, X = X, n = n, lags = lags,
        trend = trend, constant = constant)
 }
+
+# Save and restore the global random-number state so that functions accepting
+# a `seed` argument do not permanently alter the user's RNG stream.
+.etvar_get_rng <- function() {
+  if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+    get(".Random.seed", envir = globalenv(), inherits = FALSE)
+  } else {
+    NULL
+  }
+}
+
+.etvar_restore_rng <- function(old_rng) {
+  if (is.null(old_rng)) {
+    if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+      rm(".Random.seed", envir = globalenv())
+    }
+  } else {
+    assign(".Random.seed", old_rng, envir = globalenv())
+  }
+}

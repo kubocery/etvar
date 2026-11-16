@@ -26,12 +26,26 @@ intervention path.}
 }
 }
 
+\references{
+Pinter, G., Smets, F. and Üslü, S. (2025). Market whiplash after the
+2025 tariff shock: an event-targeted VAR approach. \emph{BIS Working Papers},
+No. 1282. Bank for International Settlements.
+\url{https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach}
+}
+\seealso{
+Useful links:
+\itemize{
+  \item \url{https://github.com/kubocery/etvar}
+  \item Report bugs at \url{https://github.com/kubocery/etvar/issues}
+}
+
+}
 \author{
-\strong{Maintainer}: Gabor Pinter \email{gabor.pinter@example.com}
+\strong{Maintainer}: Jakub Cery \email{jakub.cery@euba.sk}
 
 Authors:
 \itemize{
-  \item Gabor Pinter \email{gabor.pinter@example.com}
+  \item Jakub Cery \email{jakub.cery@euba.sk}
 }
 
 }

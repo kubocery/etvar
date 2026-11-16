@@ -66,7 +66,7 @@ test_that("verbose sequential optimisation enables live optim tracing", {
   var_est <- estimate_var(data, lags = 2L, nimp_wold = 3L)
 
   output <- capture.output(
-    suppressWarnings(
+    suppressMessages(suppressWarnings(
       etvar_optimize(
         start = 0,
         var_est = var_est,
@@ -77,7 +77,7 @@ test_that("verbose sequential optimisation enables live optim tracing", {
         ),
         verbose = TRUE
       )
-    )
+    ))
   )
 
   expect_true(any(grepl("Nelder-Mead direct search", output, fixed = TRUE)))

@@ -35,7 +35,8 @@
 #'   `start = NULL`. The Cholesky target direction is included, with the
 #'   remaining directions drawn uniformly on the unit sphere. Default 1.
 #' @param seed Integer or `NULL`. Random seed for reproducible multi-start
-#'   draws. Default `NULL` (no seed set).
+#'   draws. Default `NULL` (no seed set). The caller's random-number state is
+#'   restored on exit.
 #' @param control_nm   List. Control parameters for Nelder-Mead. See [optim()].
 #' @param control_bfgs List. Control parameters for BFGS. See [optim()].
 #' @param n_cores Integer. Number of CPU cores for parallel execution. Only
@@ -43,9 +44,9 @@
 #'   `n_starts > 1`). Default 1 (sequential); the maximum is 2 to respect CRAN
 #'   resource limits. On Windows a PSOCK cluster is used; on Unix-like systems
 #'   forking via [parallel::mclapply()] is used.
-#' @param verbose Logical. Print progress messages? Default `TRUE`. For
-#'   sequential runs, this also enables [optim()] tracing when `trace` is
-#'   absent or zero. Set `verbose = FALSE` to suppress optimiser output.
+#' @param verbose Logical. Print progress messages (via [message()])?
+#'   Default `FALSE`. When `TRUE`, sequential runs also enable [optim()]
+#'   tracing when `trace` is absent or zero.
 #' @return Named list with `par` (the `n - 1` optimal target-direction angles),
 #'   `target_direction` (the corresponding unit vector), `rotation` (a
 #'   deterministic orthogonal completion), `value` (best objective),
@@ -61,7 +62,7 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
                            control_bfgs = list(reltol = 1e-9, maxit = 4000,
                                                trace = 0, REPORT = 1),
                            n_cores = 1L,
-                           verbose = TRUE,
+                           verbose = FALSE,
                            start_parameterization = c("auto", "target", "full")) {
   optimization_start_time <- proc.time()[["elapsed"]]
   if (!inherits(var_est, "etvar_var")) {
@@ -98,7 +99,11 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
   )
 
   if (is.null(start) && n_starts > 1L) {
-    if (!is.null(seed)) set.seed(seed)
+    if (!is.null(seed)) {
+      old_rng <- .etvar_get_rng()
+      on.exit(.etvar_restore_rng(old_rng), add = TRUE)
+      set.seed(seed)
+    }
     starts <- vector("list", n_starts)
     starts[[1]] <- cholesky_start
     for (i in seq(2, n_starts)) {
@@ -113,7 +118,7 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     starts <- list(start)
   }
 
-  if (verbose) cat("Preparing event-targeting objective ...\n")
+  if (verbose) message("Preparing event-targeting objective ...")
   objective_context <- .etvar_prepare_objective(
     var_est, target_obs, shock_index
   )
@@ -255,7 +260,7 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
   if (use_parallel) {
     n_cores <- min(n_cores, length(starts))
     if (verbose) {
-      cat(sprintf("Running %d starts in parallel on %d cores ...\n",
+      message(sprintf("Running %d starts in parallel on %d cores ...",
                   length(starts), n_cores))
     }
 
@@ -303,7 +308,7 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     objective_by_start_stage <- do.call(rbind, lapply(results, `[[`, "records"))
 
     if (verbose) {
-      cat(sprintf("Best objective across %d starts: %g (start #%d)\n",
+      message(sprintf("Best objective across %d starts: %g (start #%d)",
                   length(starts), best$value, best_idx))
     }
 
@@ -338,24 +343,24 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     for (s in seq_along(starts)) {
       init <- starts[[s]]
       if (verbose && length(starts) > 1L) {
-        cat(sprintf("=== Start %d/%d ===\n", s, length(starts)))
+        message(sprintf("=== Start %d/%d ===", s, length(starts)))
       }
 
-      if (verbose) cat("Stage 1/3: Nelder-Mead ...\n")
+      if (verbose) message("Stage 1/3: Nelder-Mead ...")
       opt1_timed <- timed_optim(init, obj_fn, "Nelder-Mead", control_nm)
       opt1 <- opt1_timed$opt
-      if (verbose) cat("  Objective:", opt1$value, "\n")
+      if (verbose) message("  Objective: ", opt1$value)
 
-      if (verbose) cat("Stage 2/3: BFGS ...\n")
+      if (verbose) message("Stage 2/3: BFGS ...")
       opt2_timed <- timed_optim(opt1$par, obj_fn, "BFGS", control_bfgs)
       opt2 <- opt2_timed$opt
-      if (verbose) cat("  Objective:", opt2$value, "\n")
+      if (verbose) message("  Objective: ", opt2$value)
 
-      if (verbose) cat("Stage 3/3: Nelder-Mead refinement ...\n")
+      if (verbose) message("Stage 3/3: Nelder-Mead refinement ...")
       opt3_timed <- timed_optim(opt2$par, obj_fn, "Nelder-Mead", control_nm)
       opt3 <- opt3_timed$opt
       if (verbose) {
-        cat("  Final objective:", opt3$value, "\n")
+        message("  Final objective: ", opt3$value)
       }
 
       candidates <- list(stage1 = opt1, stage2 = opt2, stage3 = opt3)
@@ -372,9 +377,9 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
       candidate <- candidates[[best_stage]]
 
       if (verbose) {
-        cat("  Selected stage:", best_stage, "\n")
-        cat("  Selected convergence:",
-            ifelse(candidate$convergence == 0, "Success", "Warning"), "\n")
+        message("  Selected stage: ", best_stage)
+        message("  Selected convergence: ",
+            ifelse(candidate$convergence == 0, "Success", "Warning"))
       }
 
       if (candidate$value < best$value) {
@@ -390,7 +395,7 @@ etvar_optimize <- function(start = NULL, var_est, target_obs,
     objective_by_start_stage <- do.call(rbind, records)
 
     if (verbose && length(starts) > 1L) {
-      cat(sprintf("Best objective across %d starts: %g\n",
+      message(sprintf("Best objective across %d starts: %g",
                   length(starts), best$value))
     }
   }

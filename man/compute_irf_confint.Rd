@@ -20,7 +20,8 @@ compute_irf_confint(
 
 \item{n_boot}{Integer. Number of successful bootstrap draws. Default \code{500}.}
 
-\item{seed}{Integer or \code{NULL}. Optional random seed.}
+\item{seed}{Integer or \code{NULL}. Optional random seed. The caller's
+random-number state is restored on exit.}
 
 \item{nimp}{Integer or \code{NULL}. Number of IRF horizons. Default: the number
 of horizons stored in \code{object$irfs}.}

@@ -1,0 +1,30 @@
+bibentry(
+  bibtype     = "TechReport",
+  header      = "To cite the event-targeted VAR method, please use:",
+  title       = "Market whiplash after the 2025 tariff shock: an event-targeted VAR approach",
+  author      = c(person("Gabor", "Pinter"),
+                  person("Frank", "Smets"),
+                  person("Semih", "Üslü")),
+  institution = "Bank for International Settlements",
+  type        = "BIS Working Papers",
+  number      = "1282",
+  year        = "2025",
+  month       = "August",
+  url         = "https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach",
+  textVersion = paste(
+    "Pinter, G., Smets, F. and Üslü, S. (2025).",
+    "Market whiplash after the 2025 tariff shock: an event-targeted VAR approach.",
+    "BIS Working Papers No. 1282, Bank for International Settlements.",
+    "https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach"
+  )
+)
+
+bibentry(
+  bibtype = "Manual",
+  header  = "To cite the etvar package, please use:",
+  title   = "etvar: Event-Targeted Vector Autoregression",
+  author  = person("Jakub", "Cery"),
+  year    = "2026",
+  note    = paste("R package version", meta$Version),
+  url     = "https://github.com/kubocery/etvar"
+)

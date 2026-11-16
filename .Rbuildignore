@@ -32,3 +32,5 @@
 ^dates\.csv$
 ^optimal_parameters.*\.rds$
 ^tar_err\.pdf$
+^cran-comments\.md$
+^README\.Rmd$

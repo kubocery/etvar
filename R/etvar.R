@@ -65,9 +65,9 @@
 #' @param n_cores        Integer. Number of CPU cores for parallel multi-start
 #'   optimisation. Only used when `start_angles = NULL` and `n_starts > 1`.
 #'   Default 1 (sequential); the maximum is 2.
-#' @param verbose        Logical. Print progress messages? Default `TRUE`.
-#'   Sequential optimisation also displays the live [optim()] objective trace.
-#'   Set to `FALSE` to suppress optimiser output.
+#' @param verbose        Logical. Print progress messages (via [message()])?
+#'   Default `FALSE`. When `TRUE`, sequential optimisation also displays the
+#'   live [optim()] objective trace.
 #' @return An S3 object of class `"etvar"` containing:
 #'   \describe{
 #'     \item{var}{`etvar_var` object. Reduced-form VAR estimates.}
@@ -104,6 +104,11 @@
 #'       and stage, evaluation counts, elapsed time, controls, random seed, and
 #'       starting values.}
 #'   }
+#' @references
+#' Pinter, G., Smets, F. and Üslü, S. (2025). Market whiplash after the
+#' 2025 tariff shock: an event-targeted VAR approach. *BIS Working Papers*,
+#' No. 1282. Bank for International Settlements.
+#' <https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach>
 #' @export
 #' @examples
 #' set.seed(42)
@@ -121,7 +126,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
                   control_bfgs = list(reltol = 1e-9, maxit = 4000,
                                       trace = 0, REPORT = 1),
                   n_cores = 1L,
-                  verbose = TRUE,
+                  verbose = FALSE,
                   start_date = NULL, end_date = NULL,
                   start_parameterization = c("auto", "target", "full")) {
 
@@ -231,10 +236,10 @@ etvar <- function(data, dates, target_date, lags = 8L,
 
   # --- 1. Estimate reduced-form VAR ---
   if (verbose) {
-    cat("Estimating VAR(", lags, ") from ",
+    message("Estimating VAR(", lags, ") from ",
         format(estimation_dates[1L], "%Y-%m-%d"), " to ",
         format(estimation_dates[length(estimation_dates)], "%Y-%m-%d"),
-        " (", length(estimation_dates), " observations) ...\n", sep = "")
+        " (", length(estimation_dates), " observations) ...")
   }
   var_est <- estimate_var(data, lags = lags, constant = constant,
                           trend = trend, nimp_wold = nimp,
@@ -248,7 +253,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
   target_eff <- target_obs - lags
 
   if (optimize) {
-    if (verbose) cat("Optimising target-shock direction ...\n")
+    if (verbose) message("Optimising target-shock direction ...")
     opt <- etvar_optimize(
       start        = target_start,
       var_est      = var_est,
@@ -310,18 +315,18 @@ etvar <- function(data, dates, target_date, lags = 8L,
       n_starts = 0L,
       start_values = start_values
     )
-    if (verbose) cat("Using supplied angles. Objective:", obj_value, "\n")
+    if (verbose) message("Using supplied angles. Objective: ", obj_value)
   }
 
   # --- 3. Structural impact matrix ---
   A0 <- -t(chol(var_est$SIGMA)) %*% Q
 
   # --- 4. Impulse response functions ---
-  if (verbose) cat("Computing IRFs ...\n")
+  if (verbose) message("Computing IRFs ...")
   irfs <- compute_structural_irfs(var_est, A0, nimp)
 
   # --- 5. Historical decomposition ---
-  if (verbose) cat("Running historical decomposition ...\n")
+  if (verbose) message("Running historical decomposition ...")
   hd <- hist_decomposition_3d(
     A0       = A0,
     ALPHA    = var_est$ALPHA,
@@ -369,8 +374,13 @@ etvar <- function(data, dates, target_date, lags = 8L,
 
 
 #' Print an etvar object
+#'
+#' Prints a short description of a fitted ETVAR model.
+#'
 #' @param x An `etvar` object.
 #' @param ... Ignored.
+#' @return `x`, invisibly. Called for its side effect of printing to the
+#'   console.
 #' @export
 print.etvar <- function(x, ...) {
   cat("Event-Targeted VAR (ETVAR)\n")
@@ -397,8 +407,14 @@ print.etvar <- function(x, ...) {
 
 
 #' Summarise an etvar object
+#'
+#' Prints the model specification, identification settings, and stability
+#' diagnostics of a fitted ETVAR model.
+#'
 #' @param object An `etvar` object.
 #' @param ... Ignored.
+#' @return `object`, invisibly. Called for its side effect of printing to
+#'   the console.
 #' @export
 summary.etvar <- function(object, ...) {
   cat("========================================\n")

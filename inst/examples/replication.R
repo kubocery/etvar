@@ -9,8 +9,6 @@
 #
 # Requirement: install the etvar package before running this script.
 # ==============================================================================
-setwd(r"(D:\PhD\clanky\cran\etvar)")
-if (requireNamespace("devtools", quietly = TRUE)) devtools::load_all(".")
 library(etvar)
 
 # --- Load data ---

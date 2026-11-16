@@ -14,7 +14,7 @@ etvar_optimize(
   control_nm = list(reltol = 1e-09, maxit = 20000, trace = 0),
   control_bfgs = list(reltol = 1e-09, maxit = 4000, trace = 0, REPORT = 1),
   n_cores = 1L,
-  verbose = TRUE,
+  verbose = FALSE,
   start_parameterization = c("auto", "target", "full")
 )
 }
@@ -36,7 +36,8 @@ event date(s) in the effective sample. See \code{\link[=etvar_objective]{etvar_o
 remaining directions drawn uniformly on the unit sphere. Default 1.}
 
 \item{seed}{Integer or \code{NULL}. Random seed for reproducible multi-start
-draws. Default \code{NULL} (no seed set).}
+draws. Default \code{NULL} (no seed set). The caller's random-number state is
+restored on exit.}
 
 \item{control_nm}{List. Control parameters for Nelder-Mead. See \code{\link[=optim]{optim()}}.}
 
@@ -48,9 +49,9 @@ used when multiple starts are generated (\code{start = NULL} and
 resource limits. On Windows a PSOCK cluster is used; on Unix-like systems
 forking via \code{\link[parallel:mclapply]{parallel::mclapply()}} is used.}
 
-\item{verbose}{Logical. Print progress messages? Default \code{TRUE}. For
-sequential runs, this also enables \code{\link[=optim]{optim()}} tracing when \code{trace} is
-absent or zero. Set \code{verbose = FALSE} to suppress optimiser output.}
+\item{verbose}{Logical. Print progress messages (via \code{\link[=message]{message()}})?
+Default \code{FALSE}. When \code{TRUE}, sequential runs also enable \code{\link[=optim]{optim()}}
+tracing when \code{trace} is absent or zero.}
 
 \item{start_parameterization}{Character. Interpretation of \code{start}:
 \code{"target"}, \code{"full"}, or \code{"auto"} to infer from its length. In the

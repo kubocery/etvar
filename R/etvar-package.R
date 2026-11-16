@@ -20,6 +20,11 @@
 #'     intervention path.}
 #' }
 #'
+#' @references
+#' Pinter, G., Smets, F. and Üslü, S. (2025). Market whiplash after the
+#' 2025 tariff shock: an event-targeted VAR approach. *BIS Working Papers*,
+#' No. 1282. Bank for International Settlements.
+#' <https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach>
 #' @docType package
 #' @name etvar-package
 "_PACKAGE"

@@ -11,6 +11,11 @@
 
 \item{...}{Ignored.}
 }
+\value{
+\code{object}, invisibly. Called for its side effect of printing to
+the console.
+}
 \description{
-Summarise an etvar object
+Prints the model specification, identification settings, and stability
+diagnostics of a fitted ETVAR model.
 }
