@@ -18,6 +18,8 @@ contacted and asked to be cited rather than listed as contributors.
 0 errors | 0 warnings | 1 note
 
 * This is a new submission.
+* Possibly misspelled words in DESCRIPTION: Smets. This is a surname, from
+  the method reference Pinter, Smets and Üslü (2025).
 
 ## Data
 

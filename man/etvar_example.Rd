@@ -25,7 +25,7 @@ minus five-year TIPS constant-maturity yield, percentage points
 }
 \source{
 \itemize{
-\item \code{SP500}, \code{VIX}: Yahoo Finance, \url{https://finance.yahoo.com}, symbols
+\item \code{SP500}, \code{VIX}: Yahoo Finance (\code{finance.yahoo.com}), symbols
 \verb{^GSPC} and \verb{^VIX}, daily closing values.
 \item \code{Yield1Y}, \code{TermSpread}, \code{Breakeven5Y}: Board of Governors of the Federal
 Reserve System, H.15 Selected Interest Rates, retrieved from FRED, Federal

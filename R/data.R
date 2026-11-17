@@ -40,7 +40,7 @@
 #' }
 #'
 #' @source
-#' * `SP500`, `VIX`: Yahoo Finance, <https://finance.yahoo.com>, symbols
+#' * `SP500`, `VIX`: Yahoo Finance (`finance.yahoo.com`), symbols
 #'   `^GSPC` and `^VIX`, daily closing values.
 #' * `Yield1Y`, `TermSpread`, `Breakeven5Y`: Board of Governors of the Federal
 #'   Reserve System, H.15 Selected Interest Rates, retrieved from FRED, Federal
