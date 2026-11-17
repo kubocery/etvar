@@ -121,7 +121,7 @@ hd_window <- hist_decomposition_3d(
   n        = n,
   lags     = 8,
   trend    = 0,
-  constant = example$constant,
+  constant = 1L,
   datestar = datestar
 )
 

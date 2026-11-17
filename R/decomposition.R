@@ -39,6 +39,14 @@
 #'     \item{deterministic}{Matrix (Traw x n). Deterministic component path.}
 #'     \item{errors_str}{Matrix (T_eff x n). Structural errors.}
 #'   }
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3)
+#' var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+#' A0 <- -t(chol(var_est$SIGMA))  # Cholesky identification
+#' hd <- hist_decomposition(A0, var_est$ALPHA, var_est$Y, var_est$X,
+#'                          n = 3, lags = 2, trend = 0, constant = 1)
+#' str(hd, max.level = 1)
 #' @export
 hist_decomposition <- function(A0, ALPHA, Y, X, n, lags, trend, constant) {
   inputs <- .etvar_validate_decomposition(
@@ -151,6 +159,15 @@ hist_decomposition <- function(A0, ALPHA, Y, X, n, lags, trend, constant) {
 #'       on the intervention path.}
 #'     \item{all_data}{Array (Traw x n x n). Full (non-detrended) shock paths.}
 #'   }
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3)
+#' var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+#' A0 <- -t(chol(var_est$SIGMA))
+#' hd <- hist_decomposition_3d(A0, var_est$ALPHA, var_est$Y, var_est$X,
+#'                             n = 3, lags = 2, trend = 0, constant = 1,
+#'                             datestar = 20)
+#' dim(hd$hist_matrix_stop)
 #' @export
 hist_decomposition_3d <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
                                   datestar) {
@@ -295,6 +312,17 @@ hist_decomposition_3d <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
 #'       (target - target_stop), or `NULL`.}
 #'     \item{others}{Matrix (T x n). All shocks except the target.}
 #'   }
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3)
+#' var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+#' A0 <- -t(chol(var_est$SIGMA))
+#' hd <- hist_decomposition_3d(A0, var_est$ALPHA, var_est$Y, var_est$X,
+#'                             n = 3, lags = 2, trend = 0, constant = 1,
+#'                             datestar = 20)
+#' contributions <- rearrange_shocks(hd$hist_matrix, hd$hist_matrix_stop,
+#'                                   T_obs = nrow(y), n = 3)
+#' head(contributions$target)
 #' @export
 rearrange_shocks <- function(hist_matrix, hist_matrix_stop = NULL,
                              T_obs, n, target_shock = 1L) {

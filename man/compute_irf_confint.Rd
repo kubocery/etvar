@@ -41,3 +41,13 @@ IRFs using the fitted ETVAR target direction and its stored orthogonal
 completion. The rotation is held fixed so the structural shock labels stay
 aligned with the fitted model.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3,
+            dimnames = list(NULL, c("x1", "x2", "x3")))
+dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+ci <- compute_irf_confint(fit, level = 0.9, n_boot = 50, seed = 1)
+ci$lower[, 1, 1:3]
+plot(fit, type = "irfs", irf_ci = ci)
+}

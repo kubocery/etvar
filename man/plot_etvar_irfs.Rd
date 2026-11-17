@@ -67,3 +67,11 @@ A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 Produces a faceted ggplot showing the normalised response of each selected
 variable to a chosen structural shock.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3,
+            dimnames = list(NULL, c("x1", "x2", "x3")))
+dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+plot_etvar_irfs(fit$irfs, fit$variable_names, shock_index = 1)
+}

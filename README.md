@@ -61,6 +61,13 @@ Finance with public-domain series from FRED (Federal Reserve Board H.15 and
 H.10 releases; US Energy Information Administration). See `?etvar_example`
 for definitions and sources.
 
+WTI oil and the five-year breakeven inflation rate replace the copper price
+and one-year inflation swap rate used in the paper, which are not freely
+available. The substitutes behave differently around the tariff
+announcements; in particular, the five-year breakeven rate fell rather than
+rose, so the example does not reproduce the paper's finding on short-term
+inflation expectations.
+
 ## Citation
 
 Run `citation("etvar")` for how to cite the method and the package.

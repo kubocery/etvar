@@ -49,3 +49,18 @@ Creates a ggplot of one structural error series with optional vertical event
 lines and text annotations. A facet strip identifies the plotted shock so
 that the visual style matches the other ETVAR plots.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3,
+            dimnames = list(NULL, c("x1", "x2", "x3")))
+dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+effective_dates <- fit$dates[(fit$var$lags + 1):length(fit$dates)]
+plot_etvar_errors(
+  date_vec     = effective_dates,
+  errors       = fit$hd$errors_str[, fit$shock_index],
+  n_tail       = 40,
+  event_dates  = fit$target_date,
+  event_labels = "Event"
+)
+}

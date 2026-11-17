@@ -39,3 +39,12 @@ a deterministic (trend + constant) component. For every shock, a
 counterfactual path is built recursively using only that shock's
 reduced-form innovations; the deterministic component is then subtracted.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3)
+var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+A0 <- -t(chol(var_est$SIGMA))  # Cholesky identification
+hd <- hist_decomposition(A0, var_est$ALPHA, var_est$Y, var_est$X,
+                         n = 3, lags = 2, trend = 0, constant = 1)
+str(hd, max.level = 1)
+}

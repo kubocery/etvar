@@ -49,6 +49,14 @@
 #'     \item{variable_names}{Variable labels inherited from `object`.}
 #'     \item{method}{The string `"structural"`.}
 #'   }
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' fevd <- compute_fevd(fit)
+#' round(fevd$target[, c(1, 5, 10)], 3)  # target-shock share by horizon
 #' @export
 compute_fevd <- function(object, nimp = NULL, target_shock = NULL) {
   if (!inherits(object, "etvar")) {

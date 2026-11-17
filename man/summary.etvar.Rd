@@ -19,3 +19,11 @@ the console.
 Prints the model specification, identification settings, and stability
 diagnostics of a fitted ETVAR model.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3,
+            dimnames = list(NULL, c("x1", "x2", "x3")))
+dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+summary(fit)
+}

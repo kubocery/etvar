@@ -45,3 +45,15 @@ Permutes the 3-D decomposition array from (Time × Variable × Shock) to
 Generalises beyond a single "tariff shock": specify \code{target_shock} to
 choose which shock to isolate.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3)
+var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+A0 <- -t(chol(var_est$SIGMA))
+hd <- hist_decomposition_3d(A0, var_est$ALPHA, var_est$Y, var_est$X,
+                            n = 3, lags = 2, trend = 0, constant = 1,
+                            datestar = 20)
+contributions <- rearrange_shocks(hd$hist_matrix, hd$hist_matrix_stop,
+                                  T_obs = nrow(y), n = 3)
+head(contributions$target)
+}

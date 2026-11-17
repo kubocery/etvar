@@ -120,3 +120,15 @@ A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 S3 plotting method that dispatches to specialised plotting functions based
 on the \code{type} argument.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3,
+            dimnames = list(NULL, c("x1", "x2", "x3")))
+dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+plot(fit, type = "irfs")
+plot(fit, type = "fevd")
+plot(fit, type = "hd", n_tail = 30)
+plot(fit, type = "counterfactual", variables = 1, n_tail = 30)
+plot(fit, type = "errors", n_tail = 40)
+}

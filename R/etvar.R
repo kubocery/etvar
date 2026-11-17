@@ -381,6 +381,13 @@ etvar <- function(data, dates, target_date, lags = 8L,
 #' @param ... Ignored.
 #' @return `x`, invisibly. Called for its side effect of printing to the
 #'   console.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' print(fit)
 #' @export
 print.etvar <- function(x, ...) {
   cat("Event-Targeted VAR (ETVAR)\n")
@@ -415,6 +422,13 @@ print.etvar <- function(x, ...) {
 #' @param ... Ignored.
 #' @return `object`, invisibly. Called for its side effect of printing to
 #'   the console.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' summary(fit)
 #' @export
 summary.etvar <- function(object, ...) {
   cat("========================================\n")
@@ -527,6 +541,17 @@ summary.etvar <- function(object, ...) {
 #' @param ci_border Border colour for IRF confidence bands. Default `NA`.
 #' @param ...     Additional arguments (currently unused).
 #' @return A [ggplot2::ggplot] object.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' plot(fit, type = "irfs")
+#' plot(fit, type = "fevd")
+#' plot(fit, type = "hd", n_tail = 30)
+#' plot(fit, type = "counterfactual", variables = 1, n_tail = 30)
+#' plot(fit, type = "errors", n_tail = 40)
 #' @export
 plot.etvar <- function(
     x,

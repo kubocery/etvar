@@ -43,3 +43,13 @@ path where structural errors are zeroed out in the last \code{datestar} periods.
 This separates the contribution of shocks occurring on/after the event from
 those that occurred before.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3)
+var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+A0 <- -t(chol(var_est$SIGMA))
+hd <- hist_decomposition_3d(A0, var_est$ALPHA, var_est$Y, var_est$X,
+                            n = 3, lags = 2, trend = 0, constant = 1,
+                            datestar = 20)
+dim(hd$hist_matrix_stop)
+}

@@ -83,3 +83,12 @@ The returned non-target columns are a deterministic orthogonal completion.
 They are required for a square structural system, but they are not
 separately identified by the event-targeting objective.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3)
+var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+opt <- etvar_optimize(var_est = var_est, target_obs = 78,
+                      n_starts = 3, seed = 1)
+opt$value
+opt$target_direction
+}

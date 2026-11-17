@@ -47,3 +47,11 @@ target shock best explain the event-date movements. \code{\link[=etvar_optimize]
 prepares the direction-independent quantities once and reuses them throughout
 all optimisation stages and starting points.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3)
+var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+# Event on raw row 80, i.e. effective-sample row 80 - lags
+etvar_objective(c(0, 0), var_est, target_obs = 78)
+etvar_objective(c(0.5, -0.3), var_est, target_obs = 78)
+}

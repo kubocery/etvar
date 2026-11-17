@@ -57,3 +57,17 @@ A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 Creates a faceted ggplot comparing the model-implied counterfactual paths
 (driven by the selected structural shock only) against the observed data.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3,
+            dimnames = list(NULL, c("x1", "x2", "x3")))
+dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+plot_etvar_counterfactual(
+  date_vec       = fit$dates,
+  realized       = fit$data,
+  counterfactual = fit$hd$all_data[, , fit$shock_index],
+  variable_names = fit$variable_names,
+  n_tail         = 30
+)
+}

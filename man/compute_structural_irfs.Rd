@@ -24,3 +24,11 @@ Multiplies each Wold impulse-response matrix by the structural impact
 matrix A0 to obtain the response of every variable to every structural
 shock at each horizon.
 }
+\examples{
+set.seed(1)
+y <- matrix(rnorm(300), ncol = 3)
+var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+A0 <- -t(chol(var_est$SIGMA))
+irfs <- compute_structural_irfs(var_est, A0, nimp = 10)
+irfs[, 1, 1:3]  # responses to shock 1 at horizons 0-2
+}

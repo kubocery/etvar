@@ -7,6 +7,16 @@
 #' the oil price and five-year breakeven inflation rate stand in for the
 #' copper price and one-year inflation swap rate used in the paper.
 #'
+#' These substitutes are not equivalent to the paper's series, so results based
+#' on this dataset will differ from the published ones. In particular,
+#' `Breakeven5Y` is not a proxy for one-year inflation expectations: it
+#' averages expected inflation over five years, moves closely with oil prices,
+#' and includes a TIPS liquidity premium that widens in risk-off episodes. On
+#' 3 April 2025 the one-year inflation swap rate rose sharply while the
+#' five-year breakeven rate was little changed and fell over the following
+#' days, so the identified tariff shock lowers `Breakeven5Y` here, whereas the
+#' paper finds that it raises short-term inflation expectations.
+#'
 #' Observations are kept only on days on which every series is available, so
 #' days on which US equity, bond, foreign-exchange or oil markets were closed
 #' are dropped.

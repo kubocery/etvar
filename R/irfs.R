@@ -15,6 +15,13 @@
 #' @return Array (n x n x nimp) where element `[i, j, h]` is the response
 #'         of variable `i` to structural shock `j` at array position `h`;
 #'         position 1 is horizon zero.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3)
+#' var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+#' A0 <- -t(chol(var_est$SIGMA))
+#' irfs <- compute_structural_irfs(var_est, A0, nimp = 10)
+#' irfs[, 1, 1:3]  # responses to shock 1 at horizons 0-2
 #' @export
 compute_structural_irfs <- function(var_est, A0, nimp = 30L) {
   if (!inherits(var_est, "etvar_var")) {
@@ -178,6 +185,15 @@ simulate_var_residual_bootstrap <- function(var_est) {
 #'   positive definite.
 #' @return A list with `lower` and `upper` arrays, each with the same
 #'   dimensions as `object$irfs`, plus bootstrap metadata.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' ci <- compute_irf_confint(fit, level = 0.9, n_boot = 50, seed = 1)
+#' ci$lower[, 1, 1:3]
+#' plot(fit, type = "irfs", irf_ci = ci)
 #' @export
 compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
                                 seed = NULL, nimp = NULL,

@@ -55,6 +55,13 @@ etvar_select_scalar_title <- function(title, default_title, arg = "title") {
 #' @param facet_ncol Integer. Number of columns in the faceted display.
 #'   Default 2.
 #' @return A [ggplot2::ggplot] object.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' plot_etvar_fevd(compute_fevd(fit))
 #' @export
 plot_etvar_fevd <- function(
     fevd,
@@ -198,6 +205,19 @@ plot_etvar_fevd <- function(
 #'   displays all variables.
 #' @param facet_ncol Integer. Number of facet columns. Default 2.
 #' @return A [ggplot2::ggplot] object.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' plot_etvar_counterfactual(
+#'   date_vec       = fit$dates,
+#'   realized       = fit$data,
+#'   counterfactual = fit$hd$all_data[, , fit$shock_index],
+#'   variable_names = fit$variable_names,
+#'   n_tail         = 30
+#' )
 #' @export
 plot_etvar_counterfactual <- function(date_vec, realized, counterfactual,
                                       n_tail = 40L,
@@ -316,6 +336,20 @@ plot_etvar_counterfactual <- function(date_vec, realized, counterfactual,
 #' @param line_color Character scalar. Colour of the structural-error line.
 #'   Default `"black"`.
 #' @return A [ggplot2::ggplot] object.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' effective_dates <- fit$dates[(fit$var$lags + 1):length(fit$dates)]
+#' plot_etvar_errors(
+#'   date_vec     = effective_dates,
+#'   errors       = fit$hd$errors_str[, fit$shock_index],
+#'   n_tail       = 40,
+#'   event_dates  = fit$target_date,
+#'   event_labels = "Event"
+#' )
 #' @export
 plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
                                event_dates = NULL, event_labels = NULL,
@@ -433,6 +467,13 @@ plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
 #' @param ci_border Border colour for the confidence band. Default `NA`.
 #' @param facet_ncol Integer. Number of facet columns. Default 2.
 #' @return A [ggplot2::ggplot] object.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' plot_etvar_irfs(fit$irfs, fit$variable_names, shock_index = 1)
 #' @export
 plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
                              scaling_index = NULL,
@@ -613,6 +654,23 @@ plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
 #'   ignored; faceted plots never prompt between variables.
 #' @param facet_ncol Integer. Number of facet columns. Default 2.
 #' @return A [ggplot2::ggplot] object.
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3,
+#'             dimnames = list(NULL, c("x1", "x2", "x3")))
+#' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
+#' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' plot_etvar_hd(
+#'   date_vec       = fit$dates,
+#'   data           = fit$data,
+#'   deterministic  = fit$hd$deterministic,
+#'   target_stop    = fit$shock_contributions$target_stop,
+#'   target_rest    = fit$shock_contributions$target_rest,
+#'   others         = fit$shock_contributions$others,
+#'   datestar       = fit$datestar,
+#'   variable_names = fit$variable_names,
+#'   n_tail         = 30
+#' )
 #' @export
 plot_etvar_hd <- function(date_vec, data, deterministic, target_stop,
                            target_rest, others, datestar, variable_names,

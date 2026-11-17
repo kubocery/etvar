@@ -29,6 +29,13 @@
 #'   two-variable case, `"auto"` selects `"target"`.
 #' @return Scalar. Sum of absolute scaled deviations across all target dates
 #'   (lower is better).
+#' @examples
+#' set.seed(1)
+#' y <- matrix(rnorm(300), ncol = 3)
+#' var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
+#' # Event on raw row 80, i.e. effective-sample row 80 - lags
+#' etvar_objective(c(0, 0), var_est, target_obs = 78)
+#' etvar_objective(c(0.5, -0.3), var_est, target_obs = 78)
 #' @export
 etvar_objective <- function(theta, var_est, target_obs, shock_index = 1L,
                             parameterization = c("auto", "target", "full")) {

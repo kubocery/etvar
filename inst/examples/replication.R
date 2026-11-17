@@ -101,7 +101,7 @@ irfs <- compute_structural_irfs(var_est, A0, nimp = 30)
 datestar <- length(dates$dates) - which(dates$dates == as.Date("2025-04-03"))
 hd <- hist_decomposition_3d(
   A0 = A0, ALPHA = var_est$ALPHA, Y = var_est$Y, X = var_est$X,
-  n = n, lags = 8, trend = 0, constant = example$constant,
+  n = n, lags = 8, trend = 0, constant = 1L,
   datestar = datestar
 )
 
