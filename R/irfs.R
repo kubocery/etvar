@@ -66,29 +66,95 @@ simulate_var_residual_bootstrap <- function(var_est) {
   draw_idx <- sample.int(nrow(residuals), size = T_eff, replace = TRUE)
   boot_residuals <- residuals[draw_idx, , drop = FALSE]
 
-  for (t in (lags + 1L):T_raw) {
-    lag_values <- numeric(lags * n)
-    for (lag_i in seq_len(lags)) {
-      idx_start <- 1L + (lag_i - 1L) * n
-      idx_end   <- lag_i * n
-      lag_values[idx_start:idx_end] <- boot_data[t - lag_i, ]
-    }
-
-    tt      <- t - lags
-    reg_vec <- .build_reg_vec(
-      constant = var_est$constant,
-      trend    = var_est$trend,
-      tt       = tt,
-      tt2      = tt^2,
-      auxi     = lag_values
+  # Split ALPHA into deterministic rows (constant, trend, squared trend) and
+  # lag rows. The deterministic part and the resampled residuals do not
+  # depend on the simulated path, so they are added for all periods at once.
+  ALPHA <- var_est$ALPHA
+  n_det <- var_est$constant + var_est$trend
+  lag_coefficients <- ALPHA[n_det + seq_len(n * lags), , drop = FALSE]
+  offset <- boot_residuals
+  if (n_det > 0L) {
+    tt <- seq_len(T_eff)
+    deterministic <- cbind(
+      if (var_est$constant == 1L) rep(1, T_eff),
+      if (var_est$trend >= 1L) tt,
+      if (var_est$trend >= 2L) tt^2
     )
-
-    boot_data[t, ] <- drop(matrix(reg_vec, nrow = 1L) %*% var_est$ALPHA) +
-      boot_residuals[t - lags, ]
+    offset <- offset +
+      deterministic %*% ALPHA[seq_len(n_det), , drop = FALSE]
   }
+
+  # Companion-form recursion: `state` stacks (y_{t-1}, ..., y_{t-p}), matching
+  # the column order of the lag block in the regressor matrix. The path is
+  # built column-wise (n x T_eff), which is much cheaper than row assignment.
+  transition <- t(lag_coefficients)
+  offset <- t(offset)
+  path <- matrix(0, nrow = n, ncol = T_eff)
+  state <- as.vector(t(data[lags:1L, , drop = FALSE]))
+  keep <- seq_len(n * (lags - 1L))
+  for (tt in seq_len(T_eff)) {
+    y <- offset[, tt] + transition %*% state
+    path[, tt] <- y
+    state <- c(y, state[keep])
+  }
+  boot_data[lags + seq_len(T_eff), ] <- t(path)
 
   colnames(boot_data) <- colnames(data)
   boot_data
+}
+
+
+# Re-estimate the VAR on one bootstrap sample and return its structural IRFs
+# for a fixed rotation `Q`. This is a lean version of estimate_var() plus
+# compute_structural_irfs(): it performs a single QR decomposition and builds
+# only the first n rows of the companion-matrix powers needed for the IRFs.
+.etvar_bootstrap_irfs <- function(boot_data, lags, constant, trend,
+                                  estimation_rows, Q, nimp) {
+  n <- ncol(boot_data)
+  Y <- trim_to_effective(boot_data, lags)
+  X <- build_var_regressors(boot_data, nrow(boot_data), n, lags, trend,
+                            constant)
+  if (!is.null(estimation_rows)) {
+    X <- X[estimation_rows, , drop = FALSE]
+    Y <- Y[estimation_rows, , drop = FALSE]
+  }
+  n_parameters <- ncol(X)
+  dof <- nrow(Y) - n_parameters
+  if (dof <= 0L) stop("Too few observations in the bootstrap sample.")
+
+  qr_x <- qr(X)
+  if (qr_x$rank < n_parameters) stop("Rank-deficient bootstrap regressors.")
+  ALPHA <- qr.coef(qr_x, Y)
+  residuals <- Y - X %*% ALPHA
+  SIGMA <- crossprod(residuals) / dof
+  A0 <- -t(chol(SIGMA)) %*% Q
+
+  companion <- build_companion(ALPHA, n, lags, constant, trend)
+  irfs <- array(0, dim = c(n, n, nimp))
+  power_rows <- diag(1, nrow = n, ncol = n * lags)
+  for (h in seq_len(nimp)) {
+    if (h > 1L) power_rows <- power_rows %*% companion
+    irfs[, , h] <- -power_rows[, seq_len(n), drop = FALSE] %*% A0
+  }
+  irfs
+}
+
+
+# Type-7 quantiles (the stats::quantile() default) of every row of `x`,
+# computed with one global sort instead of one quantile() call per row.
+.etvar_row_quantiles <- function(x, prob) {
+  n_draws <- ncol(x)
+  sorted <- matrix(x[order(row(x), x)], nrow = nrow(x), ncol = n_draws,
+                   byrow = TRUE)
+  index <- 1 + (n_draws - 1) * prob
+  lo <- floor(index)
+  hi <- ceiling(index)
+  out <- sorted[, lo]
+  h <- index - lo
+  upper <- sorted[, hi]
+  interpolate <- which(index > lo & upper != out)
+  out[interpolate] <- (1 - h) * out[interpolate] + h * upper[interpolate]
+  out
 }
 
 
@@ -163,16 +229,16 @@ compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
 
     boot_irfs <- tryCatch({
       boot_data <- simulate_var_residual_bootstrap(object$var)
-      boot_var <- estimate_var(
-        data       = boot_data,
-        lags       = object$var$lags,
-        constant   = object$var$constant == 1L,
-        trend      = object$var$trend,
-        nimp_wold  = nimp,
-        estimation_rows = object$var$estimation_rows
+      if (any(!is.finite(boot_data))) stop("Non-finite bootstrap sample.")
+      .etvar_bootstrap_irfs(
+        boot_data       = boot_data,
+        lags            = object$var$lags,
+        constant        = object$var$constant,
+        trend           = object$var$trend,
+        estimation_rows = object$var$estimation_rows,
+        Q               = Q,
+        nimp            = nimp
       )
-      boot_A0 <- -t(chol(boot_var$SIGMA)) %*% Q
-      compute_structural_irfs(boot_var, boot_A0, nimp = nimp)
     }, error = function(e) NULL)
 
     if (is.null(boot_irfs) || any(!is.finite(boot_irfs))) next
@@ -192,10 +258,11 @@ compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
   }
 
   alpha <- 1 - level
-  lower <- apply(draws, c(1L, 2L, 3L), stats::quantile,
-                 probs = alpha / 2, na.rm = TRUE, names = FALSE)
-  upper <- apply(draws, c(1L, 2L, 3L), stats::quantile,
-                 probs = 1 - alpha / 2, na.rm = TRUE, names = FALSE)
+  draw_matrix <- matrix(draws, nrow = n * n * nimp, ncol = n_good)
+  lower <- array(.etvar_row_quantiles(draw_matrix, alpha / 2),
+                 dim = c(n, n, nimp))
+  upper <- array(.etvar_row_quantiles(draw_matrix, 1 - alpha / 2),
+                 dim = c(n, n, nimp))
 
   list(
     lower        = lower,
