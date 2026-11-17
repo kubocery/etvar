@@ -15,16 +15,13 @@
 library(etvar)
 
 # --- Load data ---
-data_dir <- system.file("extdata", package = "etvar")
-example  <- readRDS(file.path(data_dir, "etvar_example.rds"))
+# Daily US market data, 2021-01-04 to 2025-05-15 (see ?etvar_example).
+data("etvar_example", package = "etvar")
 
-data   <- example$data
-dates  <- example$dates
+data   <- as.matrix(etvar_example[, -1])
+dates  <- etvar_example$date
 
 variable_names <- colnames(data)
-
-# Pre-computed starting angles (warm-start the optimiser)
-theta_start <- readRDS(file.path(data_dir, "start_angles.rds"))
 
 
 # ==============================================================================
@@ -47,11 +44,11 @@ fit_window <- etvar(
   dates          = dates,
   target_date    = target_window,      # <-- vector of dates
   lags           = 8,
-  constant       = as.logical(example$constant),
-  trend          = example$trend,
+  constant       = TRUE,
+  trend          = 0,
   shock_index    = 1,
-  start_angles   = theta_start,
-  optimize       = FALSE,
+  n_starts       = 4,
+  seed           = 1,
   nimp           = 30,
   variable_names = variable_names,
   verbose        = TRUE
@@ -80,8 +77,8 @@ plot(fit_window, type = "hd", n_tail = 41)
 
 # 1. Estimate the reduced-form VAR
 var_est <- estimate_var(data, lags = 8,
-                        constant = as.logical(example$constant),
-                        trend    = example$trend)
+                        constant = TRUE,
+                        trend    = 0)
 
 # 2. Map all event dates to effective-sample indices
 target_obs_raw <- match(target_window, dates)    # indices in raw data
@@ -89,7 +86,7 @@ target_eff     <- sort(target_obs_raw) - var_est$lags   # adjust for lags
 
 # 3. Optimise over the full window (objective sums across all dates)
 opt_window <- etvar_optimize(
-  start      = theta_start,
+  start      = fit_window$theta,
   var_est    = var_est,
   target_obs = target_eff,             # <-- vector of indices
   verbose    = TRUE
@@ -99,7 +96,7 @@ cat("Final objective (window):", opt_window$value, "\n")
 
 # For comparison: single-date objective on Liberation Day only
 opt_single <- etvar_optimize(
-  start      = theta_start,
+  start      = fit_window$theta,
   var_est    = var_est,
   target_obs = target_eff[1],          # single date
   verbose    = FALSE
@@ -123,7 +120,7 @@ hd_window <- hist_decomposition_3d(
   X        = var_est$X,
   n        = n,
   lags     = 8,
-  trend    = example$trend,
+  trend    = 0,
   constant = example$constant,
   datestar = datestar
 )

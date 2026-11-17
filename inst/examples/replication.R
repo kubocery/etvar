@@ -12,35 +12,31 @@
 library(etvar)
 
 # --- Load data ---
-data_dir    <- system.file("extdata", package = "etvar")
-example     <- readRDS(file.path(data_dir, "etvar_example.rds"))
+# Daily US market data, 2021-01-04 to 2025-05-15 (see ?etvar_example).
+data("etvar_example", package = "etvar")
 
-data    <- example$data
-dates   <- data.frame(dates = example$dates)
+data    <- as.matrix(etvar_example[, -1])
+dates   <- data.frame(dates = etvar_example$date)
 
 variable_names <- colnames(data)
-
-# Pre-computed starting angles from the original MATLAB solution
-theta_start <- readRDS(file.path(data_dir, "start_angles.rds"))
 
 
 # =========================================================================
 # A) ONE-CALL INTERFACE
 # =========================================================================
 # The etvar() function runs the entire pipeline in one call.
-# Set optimize = FALSE to use the pre-computed angles directly.
+# Supply `start_angles` with `optimize = FALSE` to skip the optimisation.
 
 fit <- etvar(
   data           = data,
   dates          = dates$dates,
   target_date    = "2025-04-03",
   lags           = 8,
-  constant       = as.logical(example$constant),
-  trend          = example$trend,
+  constant       = TRUE,
+  trend          = 0,
   shock_index    = 1,
-  n_starts = 1,
- # start_angles   = theta_start,
-  optimize       = TRUE,    # Set TRUE to re-run optimisation
+  n_starts       = 4,
+  seed           = 1,
   nimp           = 30,
   variable_names = variable_names,
   verbose        = TRUE
@@ -78,15 +74,15 @@ plot(fit, type = "hd", n_tail = 41)
 
 # 1. Estimate the reduced-form VAR
 var_est <- estimate_var(data, lags = 8,
-                        constant = as.logical(example$constant),
-                        trend = example$trend)
+                        constant = TRUE,
+                        trend = 0)
 
 # 2. Find the target date in the effective sample
 target_eff <- which(dates$dates == as.Date("2025-04-03")) - var_est$lags
 
 # 3. Optimise the target-shock direction (3-stage: NM -> BFGS -> NM)
 opt <- etvar_optimize(
-  start      = theta_start,
+  start      = fit$theta,   # warm start from the one-call fit
   var_est    = var_est,
   target_obs = target_eff,
   verbose    = TRUE
@@ -105,7 +101,7 @@ irfs <- compute_structural_irfs(var_est, A0, nimp = 30)
 datestar <- length(dates$dates) - which(dates$dates == as.Date("2025-04-03"))
 hd <- hist_decomposition_3d(
   A0 = A0, ALPHA = var_est$ALPHA, Y = var_est$Y, X = var_est$X,
-  n = n, lags = 8, trend = example$trend, constant = example$constant,
+  n = n, lags = 8, trend = 0, constant = example$constant,
   datestar = datestar
 )
 

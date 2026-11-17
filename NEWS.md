@@ -11,3 +11,6 @@
 * `compute_fevd()` gives a structural forecast error variance decomposition
   (target shock versus all other shocks), and `compute_irf_confint()` gives
   residual-bootstrap confidence bands for impulse responses.
+* New `etvar_example` dataset of daily US market data (S&P 500 and VIX from
+  Yahoo Finance; Treasury yields, breakeven inflation, EUR/USD and WTI oil
+  from FRED).

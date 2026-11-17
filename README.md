@@ -29,11 +29,12 @@ remotes::install_github("kubocery/etvar")
 ```r
 library(etvar)
 
-example <- readRDS(system.file("extdata", "etvar_example.rds", package = "etvar"))
+# Daily S&P 500, VIX, Treasury yields, WTI oil, breakeven inflation and EUR/USD
+data("etvar_example")
 
 fit <- etvar(
-  data        = example$data,
-  dates       = example$dates,
+  data        = as.matrix(etvar_example[, -1]),
+  dates       = etvar_example$date,
   target_date = "2025-04-03",
   lags        = 8,
   shock_index = 1,
@@ -52,6 +53,13 @@ plot(fit, type = "counterfactual")  # realised vs. no-target-shock paths
 Passing a vector of dates to `target_date` targets a window of events jointly.
 `start_date` and `end_date` restrict the sample used to estimate the
 reduced-form VAR.
+
+## Data
+
+The bundled `etvar_example` dataset combines the S&P 500 and VIX from Yahoo
+Finance with public-domain series from FRED (Federal Reserve Board H.15 and
+H.10 releases; US Energy Information Administration). See `?etvar_example`
+for definitions and sources.
 
 ## Citation
 
