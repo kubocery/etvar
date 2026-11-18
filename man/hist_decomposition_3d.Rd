@@ -2,18 +2,19 @@
 % Please edit documentation in R/decomposition.R
 \name{hist_decomposition_3d}
 \alias{hist_decomposition_3d}
-\title{Historical decomposition with intervention (stop) path}
+\title{Historical decomposition with an intervention path}
 \usage{
 hist_decomposition_3d(A0, ALPHA, Y, X, n, lags, trend, constant, datestar)
 }
 \arguments{
-\item{A0}{Matrix (n x n). Structural impact matrix.}
+\item{A0}{Matrix (n x n). Structural impact matrix; the structural errors
+are \code{solve(A0, u_t)} for reduced-form residuals \code{u_t}.}
 
-\item{ALPHA}{Matrix (k x n). VAR coefficient matrix.}
+\item{ALPHA}{Matrix (k x n). VAR coefficients, e.g. from \code{\link[=estimate_var]{estimate_var()}}.}
 
-\item{Y}{Matrix (T_eff x n). Dependent variable matrix.}
+\item{Y}{Matrix (T_eff x n). Dependent variables.}
 
-\item{X}{Matrix (T_eff x k). Regressor matrix.}
+\item{X}{Matrix (T_eff x k). Regressors.}
 
 \item{n}{Integer. Number of variables.}
 
@@ -21,33 +22,33 @@ hist_decomposition_3d(A0, ALPHA, Y, X, n, lags, trend, constant, datestar)
 
 \item{trend}{Integer. 0 = none, 1 = linear, 2 = quadratic.}
 
-\item{constant}{Integer. 1 = include intercept, 0 = omit.}
+\item{constant}{Integer. 1 = intercept, 0 = no intercept.}
 
-\item{datestar}{Integer. Number of periods from the end of the sample in
-which structural errors are set to zero (intervention window).}
+\item{datestar}{Integer. Number of periods at the end of the sample whose
+structural errors are set to zero on the intervention path. In \code{\link[=etvar]{etvar()}}
+this is the number of observations after the first event date.}
 }
 \value{
-Named list:
+A list with the elements of \code{\link[=hist_decomposition]{hist_decomposition()}} and
 \describe{
-\item{hist_matrix}{Array (Traw x n x n). Detrended shock contributions.}
-\item{deterministic}{Matrix (Traw x n). Deterministic component.}
-\item{errors_str}{Matrix (T_eff x n). Structural errors.}
-\item{hist_matrix_stop}{Array (Traw x n x n). Detrended contributions
-on the intervention path.}
-\item{all_data}{Array (Traw x n x n). Full (non-detrended) shock paths.}
+\item{hist_matrix_stop}{Array (T x n x n). Shock contributions on the
+intervention path.}
+\item{all_data}{Array (T x n x n). \code{all_data[, , s]} is the path the
+model implies when only shock \code{s} operates: the deterministic
+component plus the contribution of shock \code{s}.}
 }
 }
 \description{
-Extends \code{\link[=hist_decomposition]{hist_decomposition()}} by simultaneously computing a counterfactual
-path where structural errors are zeroed out in the last \code{datestar} periods.
-This separates the contribution of shocks occurring on/after the event from
-those that occurred before.
+Like \code{\link[=hist_decomposition]{hist_decomposition()}}, but also decomposes an intervention path on
+which all structural errors after a given date are set to zero. ETVAR uses
+it to separate the target shocks up to and including the event date from
+the target shocks that arrive afterwards.
 }
 \examples{
 set.seed(1)
 y <- matrix(rnorm(300), ncol = 3)
 var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
-A0 <- -t(chol(var_est$SIGMA))
+A0 <- t(chol(var_est$SIGMA))  # recursive (Cholesky) identification
 hd <- hist_decomposition_3d(A0, var_est$ALPHA, var_est$Y, var_est$X,
                             n = 3, lags = 2, trend = 0, constant = 1,
                             datestar = 20)

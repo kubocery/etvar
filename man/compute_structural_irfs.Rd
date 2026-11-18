@@ -2,7 +2,7 @@
 % Please edit documentation in R/irfs.R
 \name{compute_structural_irfs}
 \alias{compute_structural_irfs}
-\title{Compute structural impulse response functions}
+\title{Structural impulse responses}
 \usage{
 compute_structural_irfs(var_est, A0, nimp = 30L)
 }
@@ -11,24 +11,25 @@ compute_structural_irfs(var_est, A0, nimp = 30L)
 
 \item{A0}{Matrix (n x n). Structural impact matrix.}
 
-\item{nimp}{Integer. Number of impulse-response horizons, including
-horizon zero. Default 30.}
+\item{nimp}{Integer. Number of horizons, including horizon zero. Default
+30; at most \code{var_est}'s \code{nimp_wold}.}
 }
 \value{
-Array (n x n x nimp) where element \verb{[i, j, h]} is the response
-of variable \code{i} to structural shock \code{j} at array position \code{h};
-position 1 is horizon zero.
+Array (n x n x nimp). Element \verb{[i, j, h]} is the response of
+variable i to shock j at horizon h - 1.
 }
 \description{
-Multiplies each Wold impulse-response matrix by the structural impact
-matrix A0 to obtain the response of every variable to every structural
-shock at each horizon.
+Multiplies the reduced-form moving-average (Wold) multipliers by the impact
+matrix. The response at horizon h is \code{Psi_h \%*\% A0}, so column j traces
+the effect of a positive one-unit structural shock j (one standard
+deviation, since the structural shocks have unit variance). The sign
+matches the structural errors used in the historical decomposition.
 }
 \examples{
 set.seed(1)
 y <- matrix(rnorm(300), ncol = 3)
 var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
-A0 <- -t(chol(var_est$SIGMA))
+A0 <- t(chol(var_est$SIGMA))  # recursive (Cholesky) identification
 irfs <- compute_structural_irfs(var_est, A0, nimp = 10)
 irfs[, 1, 1:3]  # responses to shock 1 at horizons 0-2
 }

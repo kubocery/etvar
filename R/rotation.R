@@ -1,171 +1,152 @@
-# ==============================================================================
-# Generalized Euler / Givens rotation matrix
-# ==============================================================================
-
-#' Construct an orthogonal rotation matrix from Givens angles
+#' Orthogonal rotation from Givens angles
 #'
-#' Builds an `n`-dimensional orthogonal rotation matrix by composing
-#' `n*(n-1)/2` elementary Givens rotations, one for each pair of coordinate
-#' planes. This parameterization maps a vector of unconstrained angles to the
-#' space of orthogonal matrices. It remains available for constructing legacy
-#' full-rotation starting values; [etvar()] itself optimises only the selected
-#' target-shock direction.
+#' Builds an n x n rotation matrix as the product of the `n * (n - 1) / 2`
+#' elementary Givens rotations, one for each pair of coordinates, in the order
+#' (1, 2), (1, 3), ..., (n - 1, n). This full parameterisation is what the
+#' original MATLAB implementation of ETVAR optimised. [etvar()] itself only
+#' estimates the target column of the rotation, but rotations built here can
+#' still be used as starting values (`start_parameterization = "full"`).
 #'
-#' @param theta Numeric vector of length `n*(n-1)/2`. Rotation angles (radians).
-#' @param n     Integer. Dimension of the rotation matrix.
-#' @return Matrix (n x n). Orthogonal rotation matrix with determinant +1.
-#' @export
+#' @param theta Numeric vector of `n * (n - 1) / 2` angles, in radians.
+#' @param n Integer. Dimension of the rotation.
+#' @return An n x n orthogonal matrix with determinant 1.
 #' @examples
 #' Q <- euler_rotation(c(0.5, -0.3, 1.2), n = 3)
-#' round(t(Q) %*% Q, 10)  # Should be identity
+#' round(crossprod(Q), 10)
+#' @export
 euler_rotation <- function(theta, n) {
   n <- .etvar_integer_scalar(n, "n", min = 1L)
   if (!is.numeric(theta) || anyNA(theta) || any(!is.finite(theta))) {
     stop("`theta` must be a finite numeric vector.", call. = FALSE)
   }
-
   expected <- n * (n - 1) / 2
   if (length(theta) != expected) {
     stop("Length of `theta` must be n * (n - 1) / 2 = ", expected,
          " for n = ", n, "; got ", length(theta), ".", call. = FALSE)
   }
 
-  R_mat     <- diag(nrow = n)
-  angle_idx <- 1L
-
+  rotation <- diag(nrow = n)
+  k <- 0L
   for (i in seq_len(n - 1L)) {
     for (j in seq.int(i + 1L, n)) {
-      Rij       <- diag(nrow = n)
-      ang       <- theta[angle_idx]
-      Rij[i, i] <-  cos(ang)
-      Rij[i, j] <- -sin(ang)
-      Rij[j, i] <-  sin(ang)
-      Rij[j, j] <-  cos(ang)
-      R_mat     <- R_mat %*% Rij
-      angle_idx <- angle_idx + 1L
+      k <- k + 1L
+      rotation <- rotation %*% givens(n, i, j, theta[k])
     }
-  }
-
-  R_mat
-}
-
-
-# Target-direction parameterisation ------------------------------------------
-
-# Convert a non-zero target direction to the canonical angles used by the
-# target-specific Givens sequence below.
-.etvar_angles_from_direction <- function(direction, shock_index) {
-  if (!is.numeric(direction) || length(direction) < 1L || anyNA(direction) ||
-      any(!is.finite(direction))) {
-    stop("`direction` must be a finite numeric vector.", call. = FALSE)
-  }
-
-  direction_norm <- sqrt(sum(direction^2))
-  if (!is.finite(direction_norm) ||
-      direction_norm <= sqrt(.Machine$double.eps)) {
-    stop("`direction` must have non-zero length.", call. = FALSE)
-  }
-  direction <- direction / direction_norm
-  n <- length(direction)
-  shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
-                                        min = 1L, max = n)
-  if (n == 1L) return(numeric())
-
-  other_indices <- setdiff(seq_len(n), shock_index)
-  theta <- numeric(n - 1L)
-  theta[1L] <- atan2(
-    direction[other_indices[1L]], direction[shock_index]
-  )
-  if (n > 2L) {
-    for (i in seq.int(2L, n - 1L)) {
-      previous_indices <- c(shock_index, other_indices[seq_len(i - 1L)])
-      previous_norm <- sqrt(sum(direction[previous_indices]^2))
-      theta[i] <- atan2(direction[other_indices[i]], previous_norm)
-    }
-  }
-  theta
-}
-
-
-.etvar_target_rotation <- function(theta, n, shock_index) {
-  n <- .etvar_integer_scalar(n, "n", min = 1L)
-  shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
-                                        min = 1L, max = n)
-  expected <- n - 1L
-  if (!is.numeric(theta) || anyNA(theta) || any(!is.finite(theta)) ||
-      length(theta) != expected) {
-    stop("Target-direction angles must be a finite numeric vector of length ",
-         expected, ".", call. = FALSE)
-  }
-  if (n == 1L) return(matrix(1, 1L, 1L))
-
-  rotation <- diag(n)
-  other_indices <- setdiff(seq_len(n), shock_index)
-  for (i in seq_along(other_indices)) {
-    other <- other_indices[i]
-    givens <- diag(n)
-    givens[shock_index, shock_index] <- cos(theta[i])
-    givens[shock_index, other] <- -sin(theta[i])
-    givens[other, shock_index] <- sin(theta[i])
-    givens[other, other] <- cos(theta[i])
-    rotation <- rotation %*% givens
   }
   rotation
 }
 
 
-.etvar_direction_from_angles <- function(theta, n, shock_index) {
-  rotation <- .etvar_target_rotation(theta, n, shock_index)
-  drop(rotation[, shock_index])
+# Target-direction parameterisation --------------------------------------------
+#
+# ETVAR identifies only the target column q of the rotation. q is described by
+# n - 1 angles: starting from the unit vector of the target shock, it is
+# rotated towards each of the other coordinates in turn. The remaining columns
+# come from the same product of rotations; they complete q to a rotation but
+# are not identified by the event criterion.
+
+givens <- function(n, i, j, angle) {
+  g <- diag(nrow = n)
+  g[i, i] <- cos(angle)
+  g[i, j] <- -sin(angle)
+  g[j, i] <- sin(angle)
+  g[j, j] <- cos(angle)
+  g
 }
 
+.etvar_target_rotation <- function(theta, n, shock_index) {
+  n <- .etvar_integer_scalar(n, "n", min = 1L)
+  shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
+                                       min = 1L, max = n)
+  if (!is.numeric(theta) || anyNA(theta) || any(!is.finite(theta)) ||
+      length(theta) != n - 1L) {
+    stop("Target-direction angles must be a finite numeric vector of length ",
+         n - 1L, ".", call. = FALSE)
+  }
 
-# Construct the deterministic special-orthogonal completion associated with a
-# target direction. The non-target columns are not identified by the objective.
+  rotation <- diag(nrow = n)
+  others <- setdiff(seq_len(n), shock_index)
+  for (i in seq_along(others)) {
+    rotation <- rotation %*% givens(n, shock_index, others[i], theta[i])
+  }
+  rotation
+}
+
+.etvar_direction_from_angles <- function(theta, n, shock_index) {
+  drop(.etvar_target_rotation(theta, n, shock_index)[, shock_index])
+}
+
+# Inverse of .etvar_direction_from_angles(): the angles of a (non-zero)
+# direction, which is normalised to unit length first.
+.etvar_angles_from_direction <- function(direction, shock_index) {
+  if (!is.numeric(direction) || length(direction) < 1L || anyNA(direction) ||
+      any(!is.finite(direction))) {
+    stop("`direction` must be a finite numeric vector.", call. = FALSE)
+  }
+  size <- sqrt(sum(direction^2))
+  if (size <= sqrt(.Machine$double.eps)) {
+    stop("`direction` must have non-zero length.", call. = FALSE)
+  }
+  direction <- direction / size
+  n <- length(direction)
+  shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
+                                       min = 1L, max = n)
+  if (n == 1L) {
+    return(numeric())
+  }
+
+  others <- setdiff(seq_len(n), shock_index)
+  theta <- numeric(n - 1L)
+  theta[1L] <- atan2(direction[others[1L]], direction[shock_index])
+  for (i in seq_len(n - 1L)[-1L]) {
+    done <- c(shock_index, others[seq_len(i - 1L)])
+    theta[i] <- atan2(direction[others[i]], sqrt(sum(direction[done]^2)))
+  }
+  theta
+}
+
 .etvar_complete_target_rotation <- function(direction, shock_index) {
   theta <- .etvar_angles_from_direction(direction, shock_index)
   .etvar_target_rotation(theta, length(direction), shock_index)
 }
 
-
-# Accept the new n - 1 target-direction angles and legacy full Euler angles.
-# In the only ambiguous non-trivial case (n = 2), "auto" prefers the new
-# target-direction representation; callers can request "full" explicitly.
+# Turns user-supplied angles into target-direction angles. Angles of a full
+# rotation are converted by taking the target column. "auto" decides from the
+# length; the only ambiguous case, n = 2, is read as target angles.
 .etvar_prepare_target_start <- function(start, n, shock_index,
-                                        parameterization = c(
-                                          "auto", "target", "full"
-                                        )) {
+                                        parameterization = c("auto", "target",
+                                                             "full")) {
   parameterization <- match.arg(parameterization)
   n <- .etvar_integer_scalar(n, "n", min = 1L)
   shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
-                                        min = 1L, max = n)
+                                       min = 1L, max = n)
   if (!is.numeric(start) || anyNA(start) || any(!is.finite(start))) {
     stop("`start` must be a finite numeric vector.", call. = FALSE)
   }
 
   n_target <- n - 1L
   n_full <- n * (n - 1L) / 2L
-  selected <- parameterization
-  if (selected == "auto") {
-    if (length(start) == n_target) {
-      selected <- "target"
+  if (parameterization == "auto") {
+    parameterization <- if (length(start) == n_target) {
+      "target"
     } else if (length(start) == n_full) {
-      selected <- "full"
+      "full"
     } else {
-      stop("`start` must have length ", n_target,
-           " (target direction) or ", n_full,
-           " (legacy full rotation).", call. = FALSE)
+      stop("`start` must have length ", n_target, " (target direction) or ",
+           n_full, " (full rotation).", call. = FALSE)
     }
   }
 
-  expected <- if (selected == "target") n_target else n_full
+  expected <- if (parameterization == "target") n_target else n_full
   if (length(start) != expected) {
-    stop("`start` must have length ", expected, " for `start_parameterization = \"",
-         selected, "\"`.", call. = FALSE)
+    stop("`start` must have length ", expected,
+         " for `start_parameterization = \"", parameterization, "\"`.",
+         call. = FALSE)
   }
 
-  if (selected == "target") return(as.numeric(start))
-
-  legacy_rotation <- euler_rotation(start, n)
-  .etvar_angles_from_direction(legacy_rotation[, shock_index], shock_index)
+  if (parameterization == "target") {
+    return(as.numeric(start))
+  }
+  full_rotation <- euler_rotation(start, n)
+  .etvar_angles_from_direction(full_rotation[, shock_index], shock_index)
 }

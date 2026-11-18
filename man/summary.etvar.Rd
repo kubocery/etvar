@@ -12,12 +12,12 @@
 \item{...}{Ignored.}
 }
 \value{
-\code{object}, invisibly. Called for its side effect of printing to
-the console.
+\code{object}, invisibly.
 }
 \description{
-Prints the model specification, identification settings, and stability
-diagnostics of a fitted ETVAR model.
+Prints the model specification, the identification settings and the
+largest companion-matrix eigenvalue (a stability check: it should be below
+one) of a fitted ETVAR model.
 }
 \examples{
 set.seed(1)

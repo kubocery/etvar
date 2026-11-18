@@ -19,69 +19,75 @@ etvar_optimize(
 )
 }
 \arguments{
-\item{start}{Numeric vector or \code{NULL}. Initial target-direction angles of
-length \code{n - 1}. Legacy full Euler angles of length \code{n*(n-1)/2} are also
-accepted; their target column is extracted before optimisation. When
-\code{NULL}, the Cholesky target direction is used as the first start.}
+\item{start}{Numeric vector or \code{NULL}. Starting angles: \code{n - 1}
+target-direction angles or the \code{n * (n - 1) / 2} angles of a full
+rotation (see \code{start_parameterization}). \code{NULL} starts from the Cholesky
+direction.}
 
 \item{var_est}{An \code{etvar_var} object from \code{\link[=estimate_var]{estimate_var()}}.}
 
-\item{target_obs}{Integer or integer vector. Row index (indices) of the
-event date(s) in the effective sample. See \code{\link[=etvar_objective]{etvar_objective()}}.}
+\item{target_obs}{Integer vector. Effective-sample row(s) of the event
+date(s); see \code{\link[=etvar_objective]{etvar_objective()}}.}
 
 \item{shock_index}{Integer. Which structural shock to target. Default 1.}
 
-\item{n_starts}{Integer. Total number of starting points. Only used when
-\code{start = NULL}. The Cholesky target direction is included, with the
-remaining directions drawn uniformly on the unit sphere. Default 1.}
+\item{n_starts}{Integer. Number of starting points when \code{start = NULL}.
+Default 1.}
 
-\item{seed}{Integer or \code{NULL}. Random seed for reproducible multi-start
-draws. Default \code{NULL} (no seed set). The caller's random-number state is
-restored on exit.}
+\item{seed}{Integer or \code{NULL}. Seed for the random starting points. The
+caller's random-number state is restored afterwards.}
 
-\item{control_nm}{List. Control parameters for Nelder-Mead. See \code{\link[=optim]{optim()}}.}
+\item{control_nm, control_bfgs}{Lists of \code{\link[=optim]{optim()}} controls for the
+Nelder-Mead and BFGS stages.}
 
-\item{control_bfgs}{List. Control parameters for BFGS. See \code{\link[=optim]{optim()}}.}
+\item{n_cores}{Integer. Number of cores for running several starts in
+parallel. Windows uses a PSOCK cluster, other systems fork with
+\code{\link[parallel:mclapply]{parallel::mclapply()}}. Default 1.}
 
-\item{n_cores}{Integer. Number of CPU cores for parallel execution. Only
-used when multiple starts are generated (\code{start = NULL} and
-\code{n_starts > 1}). Default 1 (sequential); the maximum is 2 to respect CRAN
-resource limits. On Windows a PSOCK cluster is used; on Unix-like systems
-forking via \code{\link[parallel:mclapply]{parallel::mclapply()}} is used.}
+\item{verbose}{Logical. Print progress messages? Sequential runs then also
+show the \code{\link[=optim]{optim()}} trace, unless the controls set \code{trace} themselves.
+Default \code{FALSE}.}
 
-\item{verbose}{Logical. Print progress messages (via \code{\link[=message]{message()}})?
-Default \code{FALSE}. When \code{TRUE}, sequential runs also enable \code{\link[=optim]{optim()}}
-tracing when \code{trace} is absent or zero.}
-
-\item{start_parameterization}{Character. Interpretation of \code{start}:
-\code{"target"}, \code{"full"}, or \code{"auto"} to infer from its length. In the
-ambiguous two-variable case, \code{"auto"} selects \code{"target"}.}
+\item{start_parameterization}{Character. How to read \code{start}: \code{"target"},
+\code{"full"}, or \code{"auto"} to decide from its length (with two variables
+\code{"auto"} reads it as \code{"target"}).}
 }
 \value{
-Named list with \code{par} (the \code{n - 1} optimal target-direction angles),
-\code{target_direction} (the corresponding unit vector), \code{rotation} (a
-deterministic orthogonal completion), \code{value} (best objective),
-\code{convergence} (0 indicates successful convergence), \code{stage} (the
-optimisation stage that produced the best value), \code{optimization} (full
-optimiser diagnostics), and \code{parameterization}.
+A list with
+\describe{
+\item{par}{The \code{n - 1} optimal angles.}
+\item{target_direction}{The corresponding unit vector.}
+\item{rotation}{An n x n rotation whose target column is
+\code{target_direction}.}
+\item{value}{The minimised objective.}
+\item{convergence, message}{\code{\link[=optim]{optim()}} convergence code and message of
+the selected stage (0 means success).}
+\item{stage, start}{The stage and the starting point that produced
+the solution.}
+\item{optimization}{Diagnostics: objective values, convergence codes
+and evaluation counts by start and stage, elapsed time, controls,
+seed and starting values.}
+}
 }
 \description{
-Runs a three-stage optimisation alternating between Nelder-Mead (simplex)
-and BFGS (gradient-based) to find the target-shock direction that minimises
-the \code{\link[=etvar_objective]{etvar_objective()}}. Only \code{n - 1} target-direction angles are estimated;
-rotations among the non-target shocks are not identified by the criterion
-and are therefore not optimised.
+Minimises \code{\link[=etvar_objective]{etvar_objective()}} over the \code{n - 1} angles of the target
+direction. Rotations among the other shocks do not change the objective,
+so they are not estimated; the returned \code{rotation} completes the target
+direction in a fixed, deterministic way.
 }
 \details{
-When \code{start = NULL} and \code{n_starts > 1}, a multi-start strategy is used:
-target directions are drawn uniformly on the unit sphere and the optimiser
-is run from each starting point (plus the Cholesky target direction). The
-solution with the lowest objective value is returned. This is the
-recommended approach when no pre-computed direction is available.
+With two variables there is a single angle and the objective repeats
+every pi radians, so it is minimised globally: a one-degree grid over all
+directions, refined with Brent's method. With more variables, each starting
+point goes through Nelder-Mead, then BFGS from that solution, then
+Nelder-Mead again, and the best of the three stages is kept. When
+\code{start = NULL} and \code{n_starts > 1}, the Cholesky direction is used together
+with directions drawn uniformly on the unit sphere, and the best start
+wins.
 
-The returned non-target columns are a deterministic orthogonal completion.
-They are required for a square structural system, but they are not
-separately identified by the event-targeting objective.
+The objective cannot tell a direction from its negative, which only flips
+the sign of the target shock. The result is signed so that the target
+shock is positive on the first event date.
 }
 \examples{
 set.seed(1)

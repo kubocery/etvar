@@ -7,7 +7,6 @@
 \method{plot}{etvar}(
   x,
   type = c("irfs", "fevd", "hd", "counterfactual", "errors"),
-  variable = NULL,
   variables = NULL,
   shock = NULL,
   scaling_index = NULL,
@@ -34,91 +33,73 @@
 \arguments{
 \item{x}{An \code{etvar} object.}
 
-\item{type}{Character. Type of plot:
+\item{type}{Character. One of
 \describe{
-\item{\code{"irfs"}}{Structural impulse response functions.}
-\item{\code{"fevd"}}{Structural forecast error variance decomposition,
-grouping the selected target shock against all other shocks.}
-\item{\code{"hd"}}{Historical decomposition stacked bar charts.}
-\item{\code{"counterfactual"}}{Counterfactual vs realised paths.}
-\item{\code{"errors"}}{Target structural error time series.}
+\item{\code{"irfs"}}{Impulse responses to the target shock (or \code{shock}),
+see \code{\link[=plot_etvar_irfs]{plot_etvar_irfs()}}.}
+\item{\code{"fevd"}}{Forecast error variance shares of the target shock
+and of all other shocks, see \code{\link[=plot_etvar_fevd]{plot_etvar_fevd()}}.}
+\item{\code{"hd"}}{Historical decomposition around the event, see
+\code{\link[=plot_etvar_hd]{plot_etvar_hd()}}: the target shock on the first event date, target
+shocks after it, and everything else (other shocks and target shocks
+before the event).}
+\item{\code{"counterfactual"}}{Observed data against the path implied by
+the target shock alone, see \code{\link[=plot_etvar_counterfactual]{plot_etvar_counterfactual()}}.}
+\item{\code{"errors"}}{The structural errors of the target shock, see
+\code{\link[=plot_etvar_errors]{plot_etvar_errors()}}.}
 }}
 
-\item{variable}{Integer or \code{NULL}. Backward-compatible alias for selecting
-one variable. Prefer \code{variables}. If both are supplied, an error is
-raised.}
+\item{variables}{Integer vector or \code{NULL}. Variables to show (all plots
+except \code{"errors"}). \code{NULL} shows every variable.}
 
-\item{variables}{Integer vector or \code{NULL}. Variables to display for IRF,
-FEVD, counterfactual, and historical-decomposition plots. \code{NULL} displays
-all variables.}
+\item{shock}{Integer or \code{NULL}. Shock to show in the \code{"irfs"}, \code{"fevd"},
+\code{"counterfactual"} and \code{"errors"} plots. Defaults to the target shock.}
 
-\item{shock}{Integer or \code{NULL}. Shock to display for IRF, FEVD,
-counterfactual, and error plots. The default is the target shock.}
+\item{scaling_index, scaling_multiplier, common_ylim}{Passed to
+\code{\link[=plot_etvar_irfs]{plot_etvar_irfs()}}: normalise the responses by one IRF element, rescale
+them, and share the y axis across panels.}
 
-\item{scaling_index}{Numeric vector for \code{type = "irfs"}. See
-\code{\link[=plot_etvar_irfs]{plot_etvar_irfs()}}.}
+\item{event_dates, event_labels}{Passed to \code{\link[=plot_etvar_errors]{plot_etvar_errors()}}: vertical
+markers and their labels.}
 
-\item{scaling_multiplier}{Numeric scalar for \code{type = "irfs"}. Applied
-after normalisation; e.g., \code{0.5} scales a unit-normalised shock to 0.5.
-Default 1.}
+\item{n_tail}{Integer. Number of trailing observations shown in the
+\code{"hd"}, \code{"counterfactual"} and \code{"errors"} plots. Default 40.}
 
-\item{common_ylim}{Logical for \code{type = "irfs"}. If \code{TRUE}, use a shared
-y-axis across all IRF panels. If \code{FALSE}, each panel uses its own
-y-range. Default \code{FALSE}.}
+\item{x_date_breaks}{Character. Spacing of the date axis labels in the
+\code{"counterfactual"} and \code{"errors"} plots, e.g. \code{"2 weeks"}. Default
+\code{"1 week"}.}
 
-\item{event_dates}{Date vector for \code{type = "errors"}. Vertical event
-markers.}
+\item{x_break_every}{Integer. In the \code{"hd"} plot, label every
+\code{x_break_every}-th date. Default 2.}
 
-\item{event_labels}{Character vector for \code{type = "errors"}. Event labels.}
+\item{merge_target_components}{Logical. In the \code{"hd"} plot, show the target
+shock as one component instead of splitting it at the event date.
+Default \code{FALSE}.}
 
-\item{n_tail}{Integer. Number of trailing observations for counterfactual,
-historical-decomposition, and error plots. Default 40.}
+\item{facet_ncol}{Integer. Number of panel columns. Default 2.}
 
-\item{x_date_breaks}{Character. Date break spacing for ggplot-based
-date axes (\code{"counterfactual"}, \code{"errors"}). Passed to
-\code{\link[ggplot2:scale_x_date]{ggplot2::scale_x_date()}} (e.g. \code{"1 week"}, \code{"2 weeks"}, \code{"1 month"}).
-Default \code{"1 week"}.}
+\item{title}{Character, \code{NULL} or \code{NA}. Plot title; \code{NULL} uses the default
+title and \code{NA} removes it.}
 
-\item{x_break_every}{Integer. For \code{type = "hd"}, show every
-\code{x_break_every}-th date label on the x-axis. Default 2.}
+\item{conf_int}{Logical. For \code{"irfs"}, compute bootstrap confidence bands
+with \code{\link[=compute_irf_confint]{compute_irf_confint()}} and draw them. Default \code{FALSE}.}
 
-\item{merge_target_components}{Logical. For \code{type = "hd"}, merge
-the event-date target-shock component and continued target-shock
-component into one bar segment. Default \code{FALSE}.}
+\item{conf_level, n_boot, ci_seed}{Confidence level, number of bootstrap
+draws and seed used when \code{conf_int = TRUE}.}
 
-\item{facet_ncol}{Integer. Number of columns in faceted variable plots.
-Default 2.}
+\item{irf_ci}{Optional result of \code{\link[=compute_irf_confint]{compute_irf_confint()}}. When supplied,
+its bands are drawn (whatever \code{conf_int} says) and no bootstrap is run.}
 
-\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses the default plot
-title, \code{NA} removes it, and a character scalar supplies a custom title.}
+\item{ci_col, ci_border}{Fill and border colour of the confidence bands.}
 
-\item{conf_int}{Logical. For \code{type = "irfs"}, draw bootstrap confidence
-intervals around the IRFs. Default \code{FALSE}.}
-
-\item{conf_level}{Numeric. Confidence level used when \code{conf_int = TRUE}.
-Default \code{0.95}.}
-
-\item{n_boot}{Integer. Number of residual-bootstrap draws used when
-\code{conf_int = TRUE}. Default \code{500}.}
-
-\item{ci_seed}{Integer or \code{NULL}. Optional random seed for bootstrap
-confidence intervals.}
-
-\item{irf_ci}{Optional pre-computed IRF confidence interval list from
-\code{\link[=compute_irf_confint]{compute_irf_confint()}}. Supplying this avoids recomputing the bootstrap.}
-
-\item{ci_col}{Fill colour for IRF confidence bands.}
-
-\item{ci_border}{Border colour for IRF confidence bands. Default \code{NA}.}
-
-\item{...}{Additional arguments (currently unused).}
+\item{...}{Not used.}
 }
 \value{
 A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
-S3 plotting method that dispatches to specialised plotting functions based
-on the \code{type} argument.
+One entry point for the ETVAR plots; \code{type} chooses the plot and the other
+arguments are passed on to the matching \verb{plot_etvar_*()} function.
 }
 \examples{
 set.seed(1)

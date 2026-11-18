@@ -1,149 +1,135 @@
-# ==============================================================================
-# Main user-facing function and S3 methods
-# ==============================================================================
-
-#' Estimate an Event-Targeted VAR model
+#' Estimate an event-targeted VAR
 #'
-#' This is the main entry point for the package. It runs the full ETVAR
-#' pipeline in a single call:
+#' Fits an ETVAR model in one call: estimates the reduced-form VAR, finds the
+#' structural shock that best explains how all variables moved on the event
+#' date(s), and computes the impulse responses, the historical decomposition
+#' and everything the plotting methods need.
 #'
-#' 1. Estimate a reduced-form VAR.
-#' 2. Optimise the target-shock direction to target the event date.
-#' 3. Build the structural impact matrix A0.
-#' 4. Compute impulse response functions.
-#' 5. Perform historical decomposition (with intervention path).
-#' 6. Rearrange shock contributions for easy plotting.
+#' The structural shocks are a rotation of the Cholesky shocks, `A0 = -L Q`
+#' with `L` the lower Cholesky factor of the residual covariance and `Q` an
+#' orthogonal matrix. The event criterion pins down only the target column of
+#' `Q`, a unit vector described by `n - 1` angles, so only that column is
+#' estimated. The other columns complete it to a rotation in a fixed way; the
+#' individual non-target shocks are therefore not identified, although their
+#' combined contribution is.
 #'
-#' The event-targeting criterion identifies one unit direction: the selected
-#' target shock. Consequently, estimation uses `n - 1` parameters rather than
-#' a full `n*(n-1)/2` rotation. The remaining columns of the returned rotation
-#' are a deterministic orthogonal completion. Individual non-target shocks
-#' should not be interpreted as separately identified; their aggregate
-#' contribution is invariant to the chosen completion.
+#' A direction and its negative fit the event equally well. When the
+#' direction is optimised, its sign is chosen so that the target shock is
+#' positive on the first event date. The impulse responses describe a
+#' positive one-standard-deviation shock, so on impact they move the same way
+#' as the data did on the event date. Angles passed with `optimize = FALSE`
+#' are used as given.
 #'
-#' @param data           Matrix or data.frame (T x n). Time-series data.
-#'   Each column is a variable. Must be numeric.
-#' @param dates          Date vector of length T. Observation dates.
-#' @param target_date    Date, character, or a **vector** of dates coercible
-#'   with `as.Date()`. A single date targets one event; a vector of dates
-#'   defines a target window where the objective is summed across all event
-#'   dates simultaneously. All supplied dates must exist in `dates`.
-#' @param start_date     Date, character, or `NULL`. Inclusive start of the
-#'   sample used to estimate the initial reduced-form VAR. The fitted VAR is
-#'   still evaluated over the full `data` sample. `NULL` uses the first
-#'   available effective-sample date.
-#' @param end_date       Date, character, or `NULL`. Inclusive end of the
-#'   sample used to estimate the initial reduced-form VAR. The fitted VAR is
-#'   still evaluated over the full `data` sample. `NULL` uses the last
-#'   available date.
-#' @param lags           Integer. Number of VAR lags. Default 8.
-#' @param constant       Logical. Include an intercept? Default `TRUE`.
-#' @param trend          Integer. Trend order (0, 1, or 2). Default 0.
-#' @param shock_index    Integer. Which structural shock to target. Default 1.
-#' @param start_angles Numeric vector or `NULL`. Target-direction angles of
-#'   length `n - 1` can be supplied to warm-start the optimisation. Legacy
-#'   full Euler angles of length `n*(n-1)/2` are also accepted and converted
-#'   to their target-shock direction. When `NULL`, the Cholesky target
-#'   direction is used as the first start.
-#' @param start_parameterization Character. Interpretation of `start_angles`:
-#'   `"target"`, `"full"`, or `"auto"` to infer from its length. In the
-#'   ambiguous two-variable case, `"auto"` selects `"target"`.
-#' @param optimize       Logical. Run the three-stage optimisation? Default
-#'   `TRUE`. Set to `FALSE` when supplying final `start_angles` directly.
-#' @param n_starts       Integer. Total number of optimiser starting points.
-#'   Only used when `start_angles = NULL`; the Cholesky target direction is
-#'   always included. A higher number gives a better chance of finding the
-#'   global minimum at the cost of runtime. Default 1.
-#' @param seed           Integer or `NULL`. Random seed for reproducible
-#'   multi-start draws. Default `NULL`.
-#' @param nimp           Integer. Number of IRF horizons, including horizon
+#' @param data Matrix or data frame (T x n) of numeric series, one column per
+#'   variable.
+#' @param dates Vector of T dates (anything [as.Date()] accepts), strictly
+#'   increasing.
+#' @param target_date One or more event dates, each of which must appear in
+#'   `dates`. With several dates the deviations are summed over all of them
+#'   (a target window).
+#' @param lags Integer. Number of VAR lags. Default 8.
+#' @param constant Logical. Include an intercept? Default `TRUE`.
+#' @param trend Integer. Deterministic trend: 0 = none, 1 = linear,
+#'   2 = quadratic. Default 0.
+#' @param shock_index Integer. Which structural shock is the target shock.
+#'   Default 1.
+#' @param start_angles Numeric vector or `NULL`. Starting angles for the
+#'   optimiser, or the final angles when `optimize = FALSE`: either the `n - 1`
+#'   angles of the target direction or the `n * (n - 1) / 2` angles of a full
+#'   rotation as in [euler_rotation()]. `NULL` starts from the Cholesky
+#'   direction.
+#' @param optimize Logical. Optimise the direction? Default `TRUE`. With
+#'   `FALSE`, the model is built from `start_angles` (or the Cholesky
+#'   direction) as they are.
+#' @param n_starts Integer. Number of starting points when
+#'   `start_angles = NULL`; the Cholesky direction is always one of them.
+#'   More starts make it less likely that the optimiser stops in a local
+#'   minimum. Default 1.
+#' @param seed Integer or `NULL`. Seed for the random starting points.
+#' @param nimp Integer. Number of impulse-response horizons, including horizon
 #'   zero. Default 30.
-#' @param variable_names Character vector of length n. Names for each variable.
-#'   If `NULL`, uses column names of `data` or `V1, V2, ...`.
-#' @param control_nm     List. Nelder-Mead control parameters. See [optim()].
-#' @param control_bfgs   List. BFGS control parameters. See [optim()].
-#' @param n_cores        Integer. Number of CPU cores for parallel multi-start
-#'   optimisation. Only used when `start_angles = NULL` and `n_starts > 1`.
-#'   Default 1 (sequential); the maximum is 2.
-#' @param verbose        Logical. Print progress messages (via [message()])?
-#'   Default `FALSE`. When `TRUE`, sequential optimisation also displays the
-#'   live [optim()] objective trace.
-#' @return An S3 object of class `"etvar"` containing:
+#' @param variable_names Character vector of n names. Defaults to the column
+#'   names of `data`, or `V1`, `V2`, ... .
+#' @param control_nm,control_bfgs Lists of [optim()] controls for the
+#'   Nelder-Mead and BFGS stages of [etvar_optimize()].
+#' @param n_cores Integer. Number of cores for running several starting
+#'   points in parallel. Default 1.
+#' @param verbose Logical. Print progress messages? Default `FALSE`.
+#' @param start_date,end_date Dates or `NULL`. Restrict the sample used to
+#'   estimate the VAR coefficients (inclusive bounds). The fitted VAR is still
+#'   applied to the whole sample, so residuals, the decomposition and the
+#'   event dates may lie outside the window. `NULL` means no bound.
+#' @param start_parameterization Character. How to read `start_angles`:
+#'   `"target"`, `"full"`, or `"auto"` to decide from its length (with two
+#'   variables `"auto"` reads it as `"target"`).
+#' @return An object of class `"etvar"`, a list with
 #'   \describe{
-#'     \item{var}{`etvar_var` object. Reduced-form VAR estimates.}
-#'     \item{theta}{Numeric vector of length `n - 1`. Optimal target-direction
-#'       angles.}
-#'     \item{target_direction}{Numeric vector of length n. Identified unit
-#'       direction of the target shock.}
-#'     \item{rotation}{Matrix (n x n). Deterministic orthogonal completion of
-#'       `target_direction`.}
-#'     \item{parameterization}{The string `"target_direction"`.}
-#'     \item{A0}{Matrix (n x n). Structural impact matrix.}
-#'     \item{irfs}{Array (n x n x nimp). Structural IRFs.}
-#'     \item{hd}{Named list from [hist_decomposition_3d()].}
-#'     \item{shock_contributions}{Named list of historical shock-contribution
-#'       matrices from [rearrange_shocks()].}
-#'     \item{dates}{Date vector.}
-#'     \item{data}{Original data matrix.}
-#'     \item{target_dates}{Date vector. All targeted event dates.}
-#'     \item{target_date}{Date. First (earliest) targeted event date.}
-#'     \item{target_obs}{Integer vector. Row indices of the event dates in
-#'       the raw data.}
-#'     \item{start_date}{Date. Requested/resolved lower bound of the initial
-#'       VAR estimation sample.}
-#'     \item{end_date}{Date. Requested/resolved upper bound of the initial
-#'       VAR estimation sample.}
-#'     \item{estimation_dates}{Date vector. Effective observations actually
-#'       used to estimate the initial VAR.}
-#'     \item{datestar}{Offset from end for the earliest event date.}
-#'     \item{shock_index}{Which shock was targeted.}
-#'     \item{variable_names}{Character vector of variable names.}
-#'     \item{objective}{Final value of the objective function.}
-#'     \item{optimization}{Named list with optimiser diagnostics: convergence
-#'       code and message, selected start and stage, objective values by start
-#'       and stage, evaluation counts, elapsed time, controls, random seed, and
-#'       starting values.}
+#'     \item{var}{The reduced-form VAR, see [estimate_var()].}
+#'     \item{theta}{The `n - 1` angles of the target direction.}
+#'     \item{target_direction}{The target column of `rotation`, a unit
+#'       vector.}
+#'     \item{rotation}{The rotation `Q` (n x n).}
+#'     \item{A0}{Structural impact matrix `-L Q` (n x n).}
+#'     \item{irfs}{Structural impulse responses (n x n x `nimp`); see
+#'       [compute_structural_irfs()].}
+#'     \item{hd}{Historical decomposition from [hist_decomposition_3d()], with
+#'       the intervention path starting after the first event date.}
+#'     \item{shock_contributions}{Contributions to the data (T x n matrices):
+#'       those of [rearrange_shocks()] (`total`, `target`, `target_stop` =
+#'       target shocks up to and including the first event date,
+#'       `target_rest` = target shocks after it, `others`), plus
+#'       `target_event`, the contribution of the target shock on the first
+#'       event date alone, and `target_before`, that of the target shocks
+#'       before it.}
+#'     \item{dates, data, variable_names}{The input data.}
+#'     \item{target_dates}{All event dates, sorted.}
+#'     \item{target_date}{The first event date.}
+#'     \item{target_obs}{Rows of the event dates in `data`.}
+#'     \item{datestar}{Number of observations after the first event date.}
+#'     \item{start_date, end_date}{Bounds of the VAR estimation sample.}
+#'     \item{estimation_dates}{Dates actually used to estimate the VAR.}
+#'     \item{shock_index}{The target shock.}
+#'     \item{objective}{The minimised objective, see [etvar_objective()].}
+#'     \item{optimization}{Optimiser diagnostics, see [etvar_optimize()].}
 #'   }
 #' @references
 #' Pinter, G., Smets, F. and Üslü, S. (2025). Market whiplash after the
 #' 2025 tariff shock: an event-targeted VAR approach. *BIS Working Papers*,
 #' No. 1282. Bank for International Settlements.
 #' <https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach>
-#' @export
+#' @seealso [plot.etvar()], [compute_fevd()], [compute_irf_confint()]
 #' @examples
 #' set.seed(42)
-#' example_data <- matrix(rnorm(160), ncol = 2)
-#' example_dates <- seq.Date(as.Date("2020-01-01"), by = "day", length.out = 80)
-#' fit <- etvar(example_data, example_dates, target_date = example_dates[60],
-#'              lags = 2, optimize = FALSE, verbose = FALSE)
-#' print(fit)
+#' y <- matrix(rnorm(160), ncol = 2)
+#' dates <- seq(as.Date("2020-01-01"), by = "day", length.out = 80)
+#' fit <- etvar(y, dates, target_date = dates[60], lags = 2)
+#' fit
+#' @export
 etvar <- function(data, dates, target_date, lags = 8L,
                   constant = TRUE, trend = 0L, shock_index = 1L,
                   start_angles = NULL, optimize = TRUE,
                   n_starts = 1L, seed = NULL,
                   nimp = 30L, variable_names = NULL,
-                  control_nm   = list(reltol = 1e-9, maxit = 20000, trace = 0),
+                  control_nm = list(reltol = 1e-9, maxit = 20000, trace = 0),
                   control_bfgs = list(reltol = 1e-9, maxit = 4000,
                                       trace = 0, REPORT = 1),
                   n_cores = 1L,
                   verbose = FALSE,
                   start_date = NULL, end_date = NULL,
                   start_parameterization = c("auto", "target", "full")) {
-
-  # --- Input validation ---
-  data         <- .etvar_numeric_matrix(data)
-  dates        <- .etvar_as_date(dates, "dates")
+  data <- .etvar_numeric_matrix(data)
+  dates <- .etvar_as_date(dates, "dates")
   target_dates <- .etvar_as_date(target_date, "target_date")
   lags <- .etvar_integer_scalar(lags, "lags", min = 1L)
   constant <- .etvar_flag(constant, "constant")
   trend <- .etvar_integer_scalar(trend, "trend", min = 0L, max = 2L)
   shock_index <- .etvar_integer_scalar(shock_index, "shock_index", min = 1L,
-                                        max = ncol(data))
+                                       max = ncol(data))
   start_parameterization <- match.arg(start_parameterization)
   optimize <- .etvar_flag(optimize, "optimize")
   n_starts <- .etvar_integer_scalar(n_starts, "n_starts", min = 1L)
   nimp <- .etvar_integer_scalar(nimp, "nimp", min = 1L)
-  n_cores <- .etvar_integer_scalar(n_cores, "n_cores", min = 1L, max = 2L)
+  n_cores <- .etvar_integer_scalar(n_cores, "n_cores", min = 1L)
   verbose <- .etvar_flag(verbose, "verbose")
   if (!is.list(control_nm) || !is.list(control_bfgs)) {
     stop("`control_nm` and `control_bfgs` must be lists.", call. = FALSE)
@@ -154,26 +140,17 @@ etvar <- function(data, dates, target_date, lags = 8L,
   }
   n <- ncol(data)
 
-  target_start <- if (is.null(start_angles)) {
-    NULL
-  } else {
-    .etvar_prepare_target_start(
-      start_angles, n, shock_index, start_parameterization
-    )
+  start <- NULL
+  if (!is.null(start_angles)) {
+    start <- .etvar_prepare_target_start(start_angles, n, shock_index,
+                                         start_parameterization)
   }
 
   if (is.null(variable_names)) {
-    variable_names <- if (!is.null(colnames(data))) {
-      colnames(data)
-    } else {
-      paste0("V", seq_len(n))
-    }
+    variable_names <- colnames(data)
+    if (is.null(variable_names)) variable_names <- paste0("V", seq_len(n))
   }
-  if (!is.character(variable_names) || length(variable_names) != n ||
-      anyNA(variable_names) || any(!nzchar(variable_names))) {
-    stop("`variable_names` must contain one non-empty name per data column.",
-         call. = FALSE)
-  }
+  .etvar_check_labels(variable_names, n, "variable_names")
 
   if (length(dates) != nrow(data)) {
     stop("`dates` must have the same length as the number of rows in `data`.",
@@ -190,56 +167,40 @@ etvar <- function(data, dates, target_date, lags = 8L,
   }
 
   target_obs <- match(target_dates, dates)
-  missing    <- target_dates[is.na(target_obs)]
-  if (length(missing) > 0) {
+  if (anyNA(target_obs)) {
     stop("date(s) not found in `dates`: ",
-         paste(format(missing, "%Y-%m-%d"), collapse = ", "),
+         paste(format(target_dates[is.na(target_obs)], "%Y-%m-%d"),
+               collapse = ", "),
          call. = FALSE)
   }
-  # Sort by date so datestar is anchored at the earliest event
-  target_obs   <- sort(target_obs)
+  target_obs <- sort(target_obs)
   target_dates <- dates[target_obs]
   if (any(target_obs <= lags)) {
     stop("Target dates must occur after the first `lags` observations.",
          call. = FALSE)
   }
-  datestar     <- length(dates) - target_obs[1]
 
-  effective_dates <- dates[(lags + 1L):length(dates)]
-  parse_date_bound <- function(value, argument, default) {
-    if (is.null(value)) return(default)
-
-    parsed <- tryCatch(as.Date(value), error = function(e) as.Date(NA))
-    if (length(parsed) != 1L || is.na(parsed)) {
-      stop("`", argument, "` must be one non-missing date or `NULL`.",
-           call. = FALSE)
-    }
-    parsed
-  }
-
-  start_date <- parse_date_bound(start_date, "start_date",
-                                 effective_dates[1L])
-  end_date <- parse_date_bound(end_date, "end_date",
-                               effective_dates[length(effective_dates)])
+  # Dates of the effective sample (rows with a full set of lags).
+  effective_dates <- dates[-seq_len(lags)]
+  start_date <- date_bound(start_date, "start_date", effective_dates[1L])
+  end_date <- date_bound(end_date, "end_date",
+                         effective_dates[length(effective_dates)])
   if (start_date > end_date) {
     stop("`start_date` must be on or before `end_date`.", call. = FALSE)
   }
-
-  estimation_rows <- which(
-    effective_dates >= start_date & effective_dates <= end_date
-  )
+  estimation_rows <- which(effective_dates >= start_date &
+                             effective_dates <= end_date)
   if (length(estimation_rows) == 0L) {
     stop("No effective-sample observations fall between `start_date` and ",
          "`end_date`.", call. = FALSE)
   }
   estimation_dates <- effective_dates[estimation_rows]
 
-  # --- 1. Estimate reduced-form VAR ---
   if (verbose) {
     message("Estimating VAR(", lags, ") from ",
-        format(estimation_dates[1L], "%Y-%m-%d"), " to ",
-        format(estimation_dates[length(estimation_dates)], "%Y-%m-%d"),
-        " (", length(estimation_dates), " observations) ...")
+            format(estimation_dates[1L], "%Y-%m-%d"), " to ",
+            format(estimation_dates[length(estimation_dates)], "%Y-%m-%d"),
+            " (", length(estimation_dates), " observations) ...")
   }
   var_est <- estimate_var(data, lags = lags, constant = constant,
                           trend = trend, nimp_wold = nimp,
@@ -248,128 +209,119 @@ etvar <- function(data, dates, target_date, lags = 8L,
   var_est$estimation_start_date <- estimation_dates[1L]
   var_est$estimation_end_date <- estimation_dates[length(estimation_dates)]
 
-  # --- 2. Optimise the target-shock direction ---
-  # target_obs are in raw-data indices; adjust to effective-sample indices
   target_eff <- target_obs - lags
-
   if (optimize) {
     if (verbose) message("Optimising target-shock direction ...")
     opt <- etvar_optimize(
-      start        = target_start,
-      var_est      = var_est,
-      target_obs   = target_eff,
-      shock_index  = shock_index,
+      start = start,
+      var_est = var_est,
+      target_obs = target_eff,
+      shock_index = shock_index,
       start_parameterization = "target",
-      n_starts     = n_starts,
-      seed         = seed,
-      control_nm   = control_nm,
-      control_bfgs = control_bfgs,
-      n_cores      = n_cores,
-      verbose      = verbose
-    )
-    theta_opt <- opt$par
-    Q <- opt$rotation
-    obj_value <- opt$value
-    optimization <- opt$optimization
-  } else {
-    if (is.null(target_start)) {
-      cholesky_direction <- numeric(n)
-      cholesky_direction[shock_index] <- 1
-      target_start <- .etvar_angles_from_direction(
-        cholesky_direction, shock_index
-      )
-    }
-    theta_opt <- target_start
-    Q <- .etvar_target_rotation(theta_opt, n, shock_index)
-    objective_start_time <- proc.time()[["elapsed"]]
-    obj_value <- etvar_objective(
-      theta_opt, var_est, target_eff, shock_index,
-      parameterization = "target"
-    )
-    objective_elapsed <- proc.time()[["elapsed"]] - objective_start_time
-    start_values <- matrix(theta_opt, nrow = 1L)
-    colnames(start_values) <- paste0("angle", seq_len(ncol(start_values)))
-    optimization <- list(
-      convergence = 0L,
-      message = "Optimization skipped; objective evaluated at supplied target-direction angles.",
-      selected_stage = "not_optimized",
-      selected_start = NA_integer_,
-      objective_by_start_stage = data.frame(
-        start = NA_integer_,
-        stage = "not_optimized",
-        method = NA_character_,
-        objective = as.numeric(obj_value),
-        convergence = 0L,
-        message = "Optimization skipped.",
-        fn_evaluations = 1L,
-        gr_evaluations = 0L,
-        elapsed_seconds = as.numeric(objective_elapsed),
-        stringsAsFactors = FALSE
-      ),
-      n_evaluations = 1L,
-      n_gradient_evaluations = 0L,
-      elapsed_seconds = as.numeric(objective_elapsed),
-      controls = list(nelder_mead = control_nm, bfgs = control_bfgs,
-                      n_cores = n_cores, parallel = FALSE),
+      n_starts = n_starts,
       seed = seed,
-      n_starts = 0L,
-      start_values = start_values
+      control_nm = control_nm,
+      control_bfgs = control_bfgs,
+      n_cores = n_cores,
+      verbose = verbose
     )
-    if (verbose) message("Using supplied angles. Objective: ", obj_value)
+  } else {
+    if (is.null(start)) start <- cholesky_angles(n, shock_index)
+    opt <- fixed_direction(start, var_est, target_eff, shock_index,
+                           control_nm, control_bfgs, n_cores, seed)
+    if (verbose) message("Using the supplied angles. Objective: ", opt$value)
   }
 
-  # --- 3. Structural impact matrix ---
-  A0 <- -t(chol(var_est$SIGMA)) %*% Q
+  # The minus sign follows the original implementation. It only fixes the
+  # sign convention of the structural errors; the impulse responses below
+  # are always responses to a positive shock.
+  A0 <- -t(chol(var_est$SIGMA)) %*% opt$rotation
 
-  # --- 4. Impulse response functions ---
-  if (verbose) message("Computing IRFs ...")
+  if (verbose) message("Computing impulse responses ...")
   irfs <- compute_structural_irfs(var_est, A0, nimp)
 
-  # --- 5. Historical decomposition ---
-  if (verbose) message("Running historical decomposition ...")
+  if (verbose) message("Running the historical decomposition ...")
+  datestar <- length(dates) - target_obs[1L]
   hd <- hist_decomposition_3d(
-    A0       = A0,
-    ALPHA    = var_est$ALPHA,
-    Y        = var_est$Y,
-    X        = var_est$X,
-    n        = n,
-    lags     = lags,
-    trend    = trend,
-    constant = as.integer(constant),
+    A0 = A0, ALPHA = var_est$ALPHA, Y = var_est$Y, X = var_est$X,
+    n = n, lags = lags, trend = trend, constant = as.integer(constant),
     datestar = datestar
   )
-
-  # --- 6. Rearrange shock contributions ---
-  T_obs  <- nrow(data)
   shock_contributions <- rearrange_shocks(
-    hd$hist_matrix, hd$hist_matrix_stop, T_obs, n, shock_index
+    hd$hist_matrix, hd$hist_matrix_stop, nrow(data), n, shock_index
   )
+  # target_stop holds every target shock up to the event, including those
+  # from years before it. Separate the event-day shock from that history.
+  shock_contributions$target_event <- single_error_contribution(
+    var_est, A0, hd$errors_str, shock_index, target_eff[1L]
+  )
+  shock_contributions$target_before <- shock_contributions$target_stop -
+    shock_contributions$target_event
 
-  # --- Assemble output ---
   structure(list(
-    var            = var_est,
-    theta          = theta_opt,
-    target_direction = drop(Q[, shock_index]),
-    rotation       = Q,
-    parameterization = "target_direction",
-    A0             = A0,
-    irfs           = irfs,
-    hd             = hd,
+    var = var_est,
+    theta = opt$par,
+    target_direction = drop(opt$rotation[, shock_index]),
+    rotation = opt$rotation,
+    A0 = A0,
+    irfs = irfs,
+    hd = hd,
     shock_contributions = shock_contributions,
-    dates          = dates,
-    data           = data,
-    target_dates   = target_dates,
-    target_date    = target_dates[1],   # backward-compat alias
-    target_obs     = target_obs,
-    start_date     = start_date,
-    end_date       = end_date,
+    dates = dates,
+    data = data,
+    target_dates = target_dates,
+    target_date = target_dates[1L],
+    target_obs = target_obs,
+    start_date = start_date,
+    end_date = end_date,
     estimation_dates = estimation_dates,
-    datestar       = datestar,
-    shock_index    = shock_index,
+    datestar = datestar,
+    shock_index = shock_index,
     variable_names = variable_names,
-    objective      = obj_value,
-    optimization   = optimization
+    objective = opt$value,
+    optimization = opt$optimization
   ), class = "etvar")
+}
+
+
+date_bound <- function(value, arg, default) {
+  if (is.null(value)) {
+    return(default)
+  }
+  parsed <- tryCatch(as.Date(value), error = function(e) as.Date(NA))
+  if (length(parsed) != 1L || is.na(parsed)) {
+    stop("`", arg, "` must be one non-missing date or `NULL`.", call. = FALSE)
+  }
+  parsed
+}
+
+# The optimize = FALSE counterpart of etvar_optimize(): evaluates the
+# objective at the given angles and records that nothing was optimised.
+fixed_direction <- function(theta, var_est, target_obs, shock_index,
+                            control_nm, control_bfgs, n_cores, seed) {
+  started <- proc.time()[["elapsed"]]
+  direction <- .etvar_direction_from_angles(theta, var_est$n, shock_index)
+  theta <- .etvar_angles_from_direction(direction, shock_index)
+  value <- etvar_objective(theta, var_est, target_obs, shock_index,
+                           parameterization = "target")
+  record <- stage_record(
+    NA_integer_, "not_optimized", NA_character_,
+    list(value = value, convergence = 0L, message = "Optimization skipped.",
+         counts = c(`function` = 1L, gradient = 0L)),
+    proc.time()[["elapsed"]] - started
+  )
+  controls <- list(nelder_mead = control_nm, bfgs = control_bfgs,
+                   n_cores = n_cores, parallel = FALSE)
+  summary <- optimization_summary(record, record, controls, seed,
+                                  list(theta), started)
+  summary$n_starts <- 0L
+
+  list(
+    par = theta,
+    rotation = .etvar_target_rotation(theta, var_est$n, shock_index),
+    value = value,
+    optimization = summary
+  )
 }
 
 
@@ -379,8 +331,7 @@ etvar <- function(data, dates, target_date, lags = 8L,
 #'
 #' @param x An `etvar` object.
 #' @param ... Ignored.
-#' @return `x`, invisibly. Called for its side effect of printing to the
-#'   console.
+#' @return `x`, invisibly.
 #' @examples
 #' set.seed(1)
 #' y <- matrix(rnorm(300), ncol = 3,
@@ -391,37 +342,49 @@ etvar <- function(data, dates, target_date, lags = 8L,
 #' @export
 print.etvar <- function(x, ...) {
   cat("Event-Targeted VAR (ETVAR)\n")
-  cat("  Variables:    ", x$var$n, "\n")
-  cat("  Lags:         ", x$var$lags, "\n")
+  print_field("Variables", x$var$n)
+  print_field("Lags", x$var$lags)
   if (length(x$target_dates) == 1L) {
-    cat("  Target date:  ", format(x$target_date, "%Y-%m-%d"), "\n")
+    print_field("Event date", format(x$target_date))
   } else {
-    cat("  Target window:", format(min(x$target_dates), "%Y-%m-%d"), "to",
-        format(max(x$target_dates), "%Y-%m-%d"),
-        paste0("(", length(x$target_dates), " dates)"), "\n")
+    print_field("Event window", paste(
+      format(min(x$target_dates)), "to", format(max(x$target_dates)),
+      paste0("(", length(x$target_dates), " dates)")
+    ))
   }
-  if (!is.null(x$var$estimation_start_date)) {
-    cat("  VAR sample:   ",
-        format(x$var$estimation_start_date, "%Y-%m-%d"), "to",
-        format(x$var$estimation_end_date, "%Y-%m-%d"),
-        paste0("(", x$var$nobs_estimation, " observations)"), "\n")
-  }
-  cat("  Target shock: ", x$shock_index, "\n")
-  cat("  Objective:    ", round(x$objective, 6), "\n")
-  cat("  IRF horizons: ", dim(x$irfs)[3], "\n")
+  print_field("VAR sample", estimation_sample(x$var))
+  print_field("Target shock", x$shock_index)
+  print_field("Objective", format(round(x$objective, 6)))
+  print_field("IRF horizons", dim(x$irfs)[3L])
   invisible(x)
+}
+
+print_field <- function(label, value) {
+  if (length(value) == 0L) {
+    return(invisible())
+  }
+  cat(sprintf("  %-15s %s\n", paste0(label, ":"), value))
+}
+
+estimation_sample <- function(var) {
+  if (is.null(var$estimation_start_date)) {
+    return(NULL)
+  }
+  paste(format(var$estimation_start_date), "to",
+        format(var$estimation_end_date),
+        paste0("(", var$nobs_estimation, " observations)"))
 }
 
 
 #' Summarise an etvar object
 #'
-#' Prints the model specification, identification settings, and stability
-#' diagnostics of a fitted ETVAR model.
+#' Prints the model specification, the identification settings and the
+#' largest companion-matrix eigenvalue (a stability check: it should be below
+#' one) of a fitted ETVAR model.
 #'
 #' @param object An `etvar` object.
 #' @param ... Ignored.
-#' @return `object`, invisibly. Called for its side effect of printing to
-#'   the console.
+#' @return `object`, invisibly.
 #' @examples
 #' set.seed(1)
 #' y <- matrix(rnorm(300), ncol = 3,
@@ -431,115 +394,86 @@ print.etvar <- function(x, ...) {
 #' summary(fit)
 #' @export
 summary.etvar <- function(object, ...) {
-  cat("========================================\n")
-  cat("Event-Targeted VAR - Summary\n")
-  cat("========================================\n\n")
+  var <- object$var
+  cat("Event-Targeted VAR (ETVAR)\n\nModel\n")
+  print_field("Variables", var$n)
+  print_field("Lags", var$lags)
+  print_field("Constant", if (var$constant == 1L) "yes" else "no")
+  print_field("Trend", c("none", "linear", "quadratic")[var$trend + 1L])
+  print_field("Observations", paste0(nrow(object$data), " (", nrow(var$Y),
+                                     " with a full set of lags)"))
+  print_field("VAR sample", estimation_sample(var))
 
-  cat("Model specification:\n")
-  cat("  Variables (n):", object$var$n, "\n")
-  cat("  Lags (p):     ", object$var$lags, "\n")
-  cat("  Constant:     ", ifelse(object$var$constant, "Yes", "No"), "\n")
-  trend_label <- c("None", "Linear", "Quadratic")[object$var$trend + 1L]
-  cat("  Trend:        ", trend_label, "\n")
-  cat("  T (raw):      ", nrow(object$data), "\n")
-  cat("  T (effective):", nrow(object$var$Y), "\n")
-  if (!is.null(object$var$estimation_start_date)) {
-    cat("  VAR fit sample:",
-        format(object$var$estimation_start_date, "%Y-%m-%d"), "to",
-        format(object$var$estimation_end_date, "%Y-%m-%d"),
-        paste0("(", object$var$nobs_estimation, " observations)"), "\n")
-  }
-  cat("\n")
+  cat("\nIdentification\n")
+  plural <- if (length(object$target_dates) > 1L) "s" else ""
+  print_field(paste0("Event date", plural),
+              paste(format(object$target_dates), collapse = ", "))
+  print_field("Target shock", object$shock_index)
+  print_field("Angles", length(object$theta))
+  print_field("Objective", format(round(object$objective, 6)))
 
-  cat("Identification:\n")
-  if (length(object$target_dates) == 1L) {
-    cat("  Target date:  ", format(object$target_date, "%Y-%m-%d"), "\n")
-  } else {
-    cat("  Target window:", format(min(object$target_dates), "%Y-%m-%d"), "to",
-        format(max(object$target_dates), "%Y-%m-%d"), "\n")
-    cat("  Event dates:  ",
-        paste(format(object$target_dates, "%Y-%m-%d"), collapse = ", "), "\n")
-  }
-  cat("  Target shock: ", object$shock_index, "\n")
-  cat("  Target-direction parameters:", length(object$theta), "\n")
-  cat("  Objective:    ", round(object$objective, 6), "\n\n")
+  cat("\nVariables\n")
+  cat(paste0("  ", seq_along(object$variable_names), ". ",
+             object$variable_names, "\n"), sep = "")
 
-  cat("Variable names:\n")
-  for (i in seq_along(object$variable_names)) {
-    cat("  ", i, ". ", object$variable_names[i], "\n", sep = "")
-  }
-
-  max_eigenvalue <- max(abs(
-    eigen(object$var$companion, only.values = TRUE)$values
-  ))
-  cat("\nMax companion eigenvalue:", round(max_eigenvalue, 4), "\n")
-
+  max_eigenvalue <- max(Mod(eigen(var$companion, only.values = TRUE)$values))
+  cat("\nLargest companion eigenvalue:", format(round(max_eigenvalue, 4)),
+      "(below 1 for a stable VAR)\n")
   invisible(object)
 }
 
 
 #' Plot an etvar object
 #'
-#' S3 plotting method that dispatches to specialised plotting functions based
-#' on the `type` argument.
+#' One entry point for the ETVAR plots; `type` chooses the plot and the other
+#' arguments are passed on to the matching `plot_etvar_*()` function.
 #'
-#' @param x    An `etvar` object.
-#' @param type Character. Type of plot:
+#' @param x An `etvar` object.
+#' @param type Character. One of
 #'   \describe{
-#'     \item{`"irfs"`}{Structural impulse response functions.}
-#'     \item{`"fevd"`}{Structural forecast error variance decomposition,
-#'       grouping the selected target shock against all other shocks.}
-#'     \item{`"hd"`}{Historical decomposition stacked bar charts.}
-#'     \item{`"counterfactual"`}{Counterfactual vs realised paths.}
-#'     \item{`"errors"`}{Target structural error time series.}
+#'     \item{`"irfs"`}{Impulse responses to the target shock (or `shock`),
+#'       see [plot_etvar_irfs()].}
+#'     \item{`"fevd"`}{Forecast error variance shares of the target shock
+#'       and of all other shocks, see [plot_etvar_fevd()].}
+#'     \item{`"hd"`}{Historical decomposition around the event, see
+#'       [plot_etvar_hd()]: the target shock on the first event date, target
+#'       shocks after it, and everything else (other shocks and target shocks
+#'       before the event).}
+#'     \item{`"counterfactual"`}{Observed data against the path implied by
+#'       the target shock alone, see [plot_etvar_counterfactual()].}
+#'     \item{`"errors"`}{The structural errors of the target shock, see
+#'       [plot_etvar_errors()].}
 #'   }
-#' @param variable Integer or `NULL`. Backward-compatible alias for selecting
-#'   one variable. Prefer `variables`. If both are supplied, an error is
-#'   raised.
-#' @param variables Integer vector or `NULL`. Variables to display for IRF,
-#'   FEVD, counterfactual, and historical-decomposition plots. `NULL` displays
-#'   all variables.
-#' @param shock Integer or `NULL`. Shock to display for IRF, FEVD,
-#'   counterfactual, and error plots. The default is the target shock.
-#' @param scaling_index Numeric vector for `type = "irfs"`. See
-#'   [plot_etvar_irfs()].
-#' @param scaling_multiplier Numeric scalar for `type = "irfs"`. Applied
-#'   after normalisation; e.g., `0.5` scales a unit-normalised shock to 0.5.
-#'   Default 1.
-#' @param common_ylim Logical for `type = "irfs"`. If `TRUE`, use a shared
-#'   y-axis across all IRF panels. If `FALSE`, each panel uses its own
-#'   y-range. Default `FALSE`.
-#' @param event_dates  Date vector for `type = "errors"`. Vertical event
-#'   markers.
-#' @param event_labels Character vector for `type = "errors"`. Event labels.
-#' @param n_tail  Integer. Number of trailing observations for counterfactual,
-#'   historical-decomposition, and error plots. Default 40.
-#' @param x_date_breaks Character. Date break spacing for ggplot-based
-#'   date axes (`"counterfactual"`, `"errors"`). Passed to
-#'   [ggplot2::scale_x_date()] (e.g. `"1 week"`, `"2 weeks"`, `"1 month"`).
-#'   Default `"1 week"`.
-#' @param x_break_every Integer. For `type = "hd"`, show every
-#'   `x_break_every`-th date label on the x-axis. Default 2.
-#' @param merge_target_components Logical. For `type = "hd"`, merge
-#'   the event-date target-shock component and continued target-shock
-#'   component into one bar segment. Default `FALSE`.
-#' @param facet_ncol Integer. Number of columns in faceted variable plots.
-#'   Default 2.
-#' @param title Character scalar, `NULL`, or `NA`. `NULL` uses the default plot
-#'   title, `NA` removes it, and a character scalar supplies a custom title.
-#' @param conf_int Logical. For `type = "irfs"`, draw bootstrap confidence
-#'   intervals around the IRFs. Default `FALSE`.
-#' @param conf_level Numeric. Confidence level used when `conf_int = TRUE`.
-#'   Default `0.95`.
-#' @param n_boot Integer. Number of residual-bootstrap draws used when
-#'   `conf_int = TRUE`. Default `500`.
-#' @param ci_seed Integer or `NULL`. Optional random seed for bootstrap
-#'   confidence intervals.
-#' @param irf_ci Optional pre-computed IRF confidence interval list from
-#'   [compute_irf_confint()]. Supplying this avoids recomputing the bootstrap.
-#' @param ci_col Fill colour for IRF confidence bands.
-#' @param ci_border Border colour for IRF confidence bands. Default `NA`.
-#' @param ...     Additional arguments (currently unused).
+#' @param variables Integer vector or `NULL`. Variables to show (all plots
+#'   except `"errors"`). `NULL` shows every variable.
+#' @param shock Integer or `NULL`. Shock to show in the `"irfs"`, `"fevd"`,
+#'   `"counterfactual"` and `"errors"` plots. Defaults to the target shock.
+#' @param scaling_index,scaling_multiplier,common_ylim Passed to
+#'   [plot_etvar_irfs()]: normalise the responses by one IRF element, rescale
+#'   them, and share the y axis across panels.
+#' @param event_dates,event_labels Passed to [plot_etvar_errors()]: vertical
+#'   markers and their labels.
+#' @param n_tail Integer. Number of trailing observations shown in the
+#'   `"hd"`, `"counterfactual"` and `"errors"` plots. Default 40.
+#' @param x_date_breaks Character. Spacing of the date axis labels in the
+#'   `"counterfactual"` and `"errors"` plots, e.g. `"2 weeks"`. Default
+#'   `"1 week"`.
+#' @param x_break_every Integer. In the `"hd"` plot, label every
+#'   `x_break_every`-th date. Default 2.
+#' @param merge_target_components Logical. In the `"hd"` plot, show the target
+#'   shock as one component instead of splitting it at the event date.
+#'   Default `FALSE`.
+#' @param facet_ncol Integer. Number of panel columns. Default 2.
+#' @param title Character, `NULL` or `NA`. Plot title; `NULL` uses the default
+#'   title and `NA` removes it.
+#' @param conf_int Logical. For `"irfs"`, compute bootstrap confidence bands
+#'   with [compute_irf_confint()] and draw them. Default `FALSE`.
+#' @param conf_level,n_boot,ci_seed Confidence level, number of bootstrap
+#'   draws and seed used when `conf_int = TRUE`.
+#' @param irf_ci Optional result of [compute_irf_confint()]. When supplied,
+#'   its bands are drawn (whatever `conf_int` says) and no bootstrap is run.
+#' @param ci_col,ci_border Fill and border colour of the confidence bands.
+#' @param ... Not used.
 #' @return A [ggplot2::ggplot] object.
 #' @examples
 #' set.seed(1)
@@ -556,7 +490,6 @@ summary.etvar <- function(object, ...) {
 plot.etvar <- function(
     x,
     type = c("irfs", "fevd", "hd", "counterfactual", "errors"),
-    variable = NULL,
     variables = NULL,
     shock = NULL,
     scaling_index = NULL,
@@ -578,115 +511,87 @@ plot.etvar <- function(
     ci_col = grDevices::adjustcolor("gray70", alpha.f = 0.45),
     ci_border = NA,
     ...) {
-  if (!inherits(x, "etvar")) {
-    stop("`x` must be an `etvar` object.", call. = FALSE)
-  }
   type <- match.arg(type)
-  if (!is.null(variable)) {
-    variable <- .etvar_integer_scalar(variable, "variable",
-                                       min = 1L, max = x$var$n)
-    if (!is.null(variables)) {
-      stop("Use only one of `variable` and `variables`.", call. = FALSE)
-    }
-    variables <- variable
-  }
-  if (identical(type, "errors") && !is.null(variables)) {
+  n <- x$var$n
+  if (type == "errors" && !is.null(variables)) {
     stop("`variables` does not apply to structural-error plots; use `shock`.",
          call. = FALSE)
   }
   if (!is.null(variables)) {
-    variables <- .etvar_index_vector(variables, "variables", x$var$n)
+    variables <- .etvar_index_vector(variables, "variables", n)
   }
-  facet_ncol <- .etvar_integer_scalar(facet_ncol, "facet_ncol", min = 1L)
-  conf_int <- .etvar_flag(conf_int, "conf_int")
   if (is.null(shock)) shock <- x$shock_index
-  shock <- .etvar_integer_scalar(shock, "shock",
-                                 min = 1L, max = x$var$n)
+  shock <- .etvar_integer_scalar(shock, "shock", min = 1L, max = n)
+  conf_int <- .etvar_flag(conf_int, "conf_int")
 
   switch(type,
     irfs = {
-      if (isTRUE(conf_int) && is.null(irf_ci)) {
-        irf_ci <- compute_irf_confint(
-          object = x,
-          level  = conf_level,
-          n_boot = n_boot,
-          seed   = ci_seed,
-          nimp   = dim(x$irfs)[3]
-        )
+      if (conf_int && is.null(irf_ci)) {
+        irf_ci <- compute_irf_confint(x, level = conf_level, n_boot = n_boot,
+                                      seed = ci_seed)
       }
       plot_etvar_irfs(
-        irfs           = x$irfs,
+        irfs = x$irfs,
         variable_names = x$variable_names,
-        shock_index    = shock,
-        scaling_index  = scaling_index,
+        shock_index = shock,
+        scaling_index = scaling_index,
         scaling_multiplier = scaling_multiplier,
-        common_ylim    = common_ylim,
-        variables      = variables,
-        facet_ncol     = facet_ncol,
-        title          = title,
-        irf_ci         = irf_ci,
-        ci_col         = ci_col,
-        ci_border      = ci_border
-      )
-    },
-    fevd = {
-      fevd_result <- compute_fevd(x, target_shock = shock)
-      plot_etvar_fevd(
-        fevd = fevd_result,
+        common_ylim = common_ylim,
         variables = variables,
         title = title,
+        irf_ci = irf_ci,
+        ci_col = ci_col,
+        ci_border = ci_border,
         facet_ncol = facet_ncol
       )
     },
-    hd = {
-      plot_etvar_hd(
-        date_vec       = x$dates,
-        data           = x$data,
-        deterministic  = x$hd$deterministic,
-        target_stop    = x$shock_contributions$target_stop,
-        target_rest    = x$shock_contributions$target_rest,
-        others         = x$shock_contributions$others,
-        datestar       = x$datestar,
-        variable_names = x$variable_names,
-        variables      = variables,
-        n_tail         = n_tail,
-        x_break_every  = x_break_every,
-        merge_target_components = merge_target_components,
-        facet_ncol     = facet_ncol,
-        title          = title
-      )
-    },
-    counterfactual = {
-      plot_etvar_counterfactual(
-        date_vec       = x$dates,
-        realized       = x$data,
-        counterfactual = x$hd$all_data[, , shock],
-        variable_names = x$variable_names,
-        variables      = variables,
-        n_tail         = n_tail,
-        x_date_breaks  = x_date_breaks,
-        facet_ncol     = facet_ncol,
-        title          = title
-      )
-    },
-    errors = {
-      err_dates <- x$dates[(x$var$lags + 1):length(x$dates)]
-      panel_title <- if (shock == x$shock_index) {
-        paste0("Target shock (", x$shock_index, ")")
+    fevd = plot_etvar_fevd(
+      compute_fevd(x, target_shock = shock),
+      variables = variables,
+      title = title,
+      facet_ncol = facet_ncol
+    ),
+    hd = plot_etvar_hd(
+      date_vec = x$dates,
+      data = x$data,
+      deterministic = x$hd$deterministic,
+      target_event = x$shock_contributions$target_event,
+      target_rest = x$shock_contributions$target_rest,
+      others = x$shock_contributions$others +
+        x$shock_contributions$target_before,
+      datestar = x$datestar,
+      variable_names = x$variable_names,
+      variables = variables,
+      n_tail = n_tail,
+      x_break_every = x_break_every,
+      merge_target_components = merge_target_components,
+      title = title,
+      facet_ncol = facet_ncol
+    ),
+    counterfactual = plot_etvar_counterfactual(
+      date_vec = x$dates,
+      realized = x$data,
+      counterfactual = x$hd$all_data[, , shock],
+      variable_names = x$variable_names,
+      variables = variables,
+      n_tail = n_tail,
+      x_date_breaks = x_date_breaks,
+      title = title,
+      facet_ncol = facet_ncol
+    ),
+    errors = plot_etvar_errors(
+      date_vec = x$dates[-seq_len(x$var$lags)],
+      errors = x$hd$errors_str[, shock],
+      n_tail = n_tail,
+      event_dates = event_dates,
+      event_labels = event_labels,
+      x_date_breaks = x_date_breaks,
+      title = title,
+      panel_title = if (shock == x$shock_index) {
+        paste0("Target shock (", shock, ")")
       } else {
         paste("Shock", shock)
       }
-      plot_etvar_errors(
-        date_vec     = err_dates,
-        errors       = x$hd$errors_str[, shock],
-        panel_title  = panel_title,
-        line_color   = "black",
-        n_tail       = n_tail,
-        event_dates  = event_dates,
-        event_labels = event_labels,
-        x_date_breaks = x_date_breaks,
-        title        = title
-      )
-    }
+    )
   )
 }

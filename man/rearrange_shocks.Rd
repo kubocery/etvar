@@ -13,43 +13,42 @@ rearrange_shocks(
 )
 }
 \arguments{
-\item{hist_matrix}{Array (T x n x n). Detrended shock contributions
-from \code{\link[=hist_decomposition]{hist_decomposition()}} or \code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}.}
+\item{hist_matrix}{Array (T x n x n). Shock contributions from
+\code{\link[=hist_decomposition]{hist_decomposition()}} or \code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}.}
 
-\item{hist_matrix_stop}{Array (T x n x n). Intervention-path contributions
-(from \code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}). Pass \code{NULL} if no intervention path
-was computed.}
+\item{hist_matrix_stop}{Array (T x n x n) of intervention-path
+contributions from \code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}, or \code{NULL}.}
 
-\item{T_obs}{Integer. Number of observations.}
+\item{T_obs}{Integer. Number of observations T.}
 
-\item{n}{Integer. Number of variables / shocks.}
+\item{n}{Integer. Number of variables (and shocks).}
 
-\item{target_shock}{Integer. Which shock to isolate. Default 1.}
+\item{target_shock}{Integer. The shock to isolate. Default 1.}
 }
 \value{
-Named list:
+A list of T x n matrices:
 \describe{
-\item{total}{Matrix (T x n). Sum of all shock contributions per
-variable.}
-\item{target}{Matrix (T x n). Contribution of the target shock.}
-\item{target_stop}{Matrix (T x n). Target shock on the intervention path
-(or \code{NULL}).}
-\item{target_rest}{Matrix (T x n). Continued target shocks
-(target - target_stop), or \code{NULL}.}
-\item{others}{Matrix (T x n). All shocks except the target.}
+\item{total}{Sum of all shock contributions.}
+\item{target}{Contribution of the target shock.}
+\item{target_stop}{Target-shock contribution on the intervention path,
+or \code{NULL}.}
+\item{target_rest}{\code{target - target_stop}: the effect of target shocks
+after the intervention date, or \code{NULL}.}
+\item{others}{Contribution of all other shocks combined.}
 }
 }
 \description{
-Permutes the 3-D decomposition array from (Time × Variable × Shock) to
-(Time × Shock × Variable) and extracts convenient per-shock matrices.
-Generalises beyond a single "tariff shock": specify \code{target_shock} to
-choose which shock to isolate.
+Pulls the pieces that the ETVAR plots need out of the (time x variable x
+shock) arrays returned by \code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}: the contribution of
+the target shock, the sum over all other shocks and, when an intervention
+path is supplied, the split of the target contribution into the part up to
+the event and the part after it.
 }
 \examples{
 set.seed(1)
 y <- matrix(rnorm(300), ncol = 3)
 var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
-A0 <- -t(chol(var_est$SIGMA))
+A0 <- t(chol(var_est$SIGMA))  # recursive (Cholesky) identification
 hd <- hist_decomposition_3d(A0, var_est$ALPHA, var_est$Y, var_est$X,
                             n = 3, lags = 2, trend = 0, constant = 1,
                             datestar = 20)

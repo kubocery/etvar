@@ -48,8 +48,10 @@ summary(fit)
 
 # --- Plots via the S3 method ---
 
-# Impulse response functions (normalised by VIX response at horizon 1)
-plot(fit, type = "irfs", scaling_index = c(2, 1, 1), conf_int = TRUE, conf_level = 0.8)
+# Impulse responses relative to the impact response of the VIX (variable 2),
+# with 80% bootstrap bands
+plot(fit, type = "irfs", scaling_index = c(2, 1, 1),
+     conf_int = TRUE, conf_level = 0.8)
 
 # Forecast error variance shares: target shock versus all other shocks
 plot(fit, type = "fevd")
@@ -111,6 +113,17 @@ shock_contributions <- rearrange_shocks(
   nrow(data), n, target_shock = 1
 )
 
+# target_stop holds all target shocks up to and including the event day.
+# Cutting the path one day earlier gives the target shocks before the event,
+# and the difference is the event-day shock on its own.
+hd_before <- hist_decomposition_3d(
+  A0 = A0, ALPHA = var_est$ALPHA, Y = var_est$Y, X = var_est$X,
+  n = n, lags = 8, trend = 0, constant = 1L,
+  datestar = datestar + 1
+)
+target_before <- hd_before$hist_matrix_stop[, , 1]
+target_event <- shock_contributions$target_stop - target_before
+
 # 8. Standalone plotting functions
 plot_etvar_irfs(irfs, variable_names, shock_index = 1,
                 scaling_index = c(2, 1, 1))
@@ -118,14 +131,14 @@ plot_etvar_irfs(irfs, variable_names, shock_index = 1,
 plot_etvar_counterfactual(
   date_vec = dates$dates, realized = data[, 6],
   counterfactual = hd$all_data[, 6, 1], n_tail = 40,
-  title = "1Y Inflation Swap Rate"
+  title = variable_names[6]
 )
 
 plot_etvar_hd(
   date_vec = dates$dates, data = data, deterministic = hd$deterministic,
-  target_stop = shock_contributions$target_stop,
+  target_event = target_event,
   target_rest = shock_contributions$target_rest,
-  others = shock_contributions$others, datestar = datestar,
-  variable_names = variable_names, n_tail = 41,
+  others = shock_contributions$others + target_before,
+  datestar = datestar, variable_names = variable_names, n_tail = 41,
   shock_labels = c("Liberation Day", "New tariff shocks", "Other shocks")
 )

@@ -1,169 +1,74 @@
-# ==============================================================================
-# Historical decomposition
-# ==============================================================================
-
-# ---------- internal helper: build deterministic regressor vector ----------
-.build_reg_vec <- function(constant, trend, tt, tt2, auxi) {
-  if (constant == 1L) {
-    if (trend == 1L)      return(c(1, tt, auxi))
-    if (trend == 2L)      return(c(1, tt, tt2, auxi))
-    c(1, auxi)
-  } else {
-    if (trend == 1L)      return(c(tt, auxi))
-    if (trend == 2L)      return(c(tt, tt2, auxi))
-    auxi
-  }
-}
-
-
 #' Historical decomposition of a structural VAR
 #'
-#' Decomposes each variable into the contribution of each structural shock and
-#' a deterministic (trend + constant) component. For every shock, a
-#' counterfactual path is built recursively using only that shock's
-#' reduced-form innovations; the deterministic component is then subtracted.
+#' Splits every variable into a deterministic component (pre-sample values
+#' carried forward by the constant and trend) and the contribution of each
+#' structural shock. Because the VAR is linear, the contributions and the
+#' deterministic component add up to the data.
 #'
-#' @param A0       Matrix (n x n). Structural impact matrix.
-#' @param ALPHA    Matrix (k x n). VAR coefficient matrix.
-#' @param Y        Matrix (T_eff x n). Dependent variable matrix.
-#' @param X        Matrix (T_eff x k). Regressor matrix.
-#' @param n        Integer. Number of variables.
-#' @param lags     Integer. Number of lags.
-#' @param trend    Integer. 0 = none, 1 = linear, 2 = quadratic.
-#' @param constant Integer. 1 = include intercept, 0 = omit.
-#' @return Named list:
+#' @param A0 Matrix (n x n). Structural impact matrix; the structural errors
+#'   are `solve(A0, u_t)` for reduced-form residuals `u_t`.
+#' @param ALPHA Matrix (k x n). VAR coefficients, e.g. from [estimate_var()].
+#' @param Y Matrix (T_eff x n). Dependent variables.
+#' @param X Matrix (T_eff x k). Regressors.
+#' @param n Integer. Number of variables.
+#' @param lags Integer. Number of lags.
+#' @param trend Integer. 0 = none, 1 = linear, 2 = quadratic.
+#' @param constant Integer. 1 = intercept, 0 = no intercept.
+#' @return A list with
 #'   \describe{
-#'     \item{hist_matrix}{Array (Traw x n x n). Detrended shock contributions
-#'       where `[t, v, s]` is the contribution of shock `s` to variable `v`
-#'       at time `t`.}
-#'     \item{deterministic}{Matrix (Traw x n). Deterministic component path.}
+#'     \item{hist_matrix}{Array (T x n x n). Element `[t, v, s]` is the
+#'       contribution of shock `s` to variable `v` at time `t`, where
+#'       T = T_eff + lags covers the raw sample. The first `lags` rows are
+#'       zero.}
+#'     \item{deterministic}{Matrix (T x n). Deterministic component.}
 #'     \item{errors_str}{Matrix (T_eff x n). Structural errors.}
 #'   }
 #' @examples
 #' set.seed(1)
 #' y <- matrix(rnorm(300), ncol = 3)
 #' var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
-#' A0 <- -t(chol(var_est$SIGMA))  # Cholesky identification
+#' A0 <- t(chol(var_est$SIGMA))  # recursive (Cholesky) identification
 #' hd <- hist_decomposition(A0, var_est$ALPHA, var_est$Y, var_est$X,
 #'                          n = 3, lags = 2, trend = 0, constant = 1)
-#' str(hd, max.level = 1)
+#'
+#' # contributions plus the deterministic part reproduce the data
+#' total <- hd$deterministic + rowSums(hd$hist_matrix, dims = 2)
+#' all.equal(total, y, check.attributes = FALSE)
 #' @export
 hist_decomposition <- function(A0, ALPHA, Y, X, n, lags, trend, constant) {
   inputs <- .etvar_validate_decomposition(
     A0, ALPHA, Y, X, n, lags, trend, constant
   )
-  A0 <- inputs$A0
-  ALPHA <- inputs$ALPHA
-  Y <- inputs$Y
-  X <- inputs$X
-  n <- inputs$n
-  lags <- inputs$lags
-  trend <- inputs$trend
-  constant <- inputs$constant
-  Traw <- nrow(Y) + lags
-
-  errors_red <- Y - X %*% ALPHA
-  errors_str <- t(solve(A0, t(errors_red)))
-
-  Y1_shock_detrend <- array(0, dim = c(Traw, n, n))
-  errors_str10     <- array(0, dim = c(Traw - lags, n, n))
-  Y1_shock         <- array(0, dim = c(Traw, n, n))
-  Y1_shock_det     <- matrix(0, nrow = Traw, ncol = n)
-
-  nc <- as.integer(constant == 1L)
-  nt <- trend
-
-  # --- Initialise from pre-sample lags ---
-  for (i_lag in seq_len(lags)) {
-    idx_end   <- (lags - (i_lag - 1)) * n + (nc + nt)
-    idx_start <- idx_end - n + 1
-    val       <- X[1, idx_start:idx_end]
-    Y1_shock_det[i_lag, ] <- val
-    for (i in seq_len(n)) Y1_shock[i_lag, , i] <- val
-  }
-
-  auxi_det <- numeric(lags * n)
-  for (i in seq_len(lags)) {
-    idx_s <- 1 + (i - 1) * n
-    idx_e <- n + (i - 1) * n
-    auxi_det[idx_s:idx_e] <- Y1_shock_det[(lags + 1) - i, ]
-  }
-
-  # --- Map structural errors to reduced-form ---
-  for (i in seq_len(n)) {
-    lala      <- matrix(0, nrow = Traw - lags, ncol = n)
-    lala[, i] <- errors_str[, i]
-    errors_str10[, , i] <- t(A0 %*% t(lala))
-  }
-
-  # --- Main recursive loop ---
-  tt  <- 1
-  tt2 <- 1
-
-  for (i_time in seq.int(lags + 1L, Traw)) {
-    for (iauxi in seq_len(lags)) {
-      idx_s <- 1 + (iauxi - 1) * n
-      idx_e <- n + (iauxi - 1) * n
-      auxi_det[idx_s:idx_e] <- Y1_shock_det[i_time - iauxi, ]
-    }
-
-    reg_vec <- .build_reg_vec(constant, trend, tt, tt2, auxi_det)
-    Y1_shock_det[i_time, ] <- matrix(reg_vec, nrow = 1) %*% ALPHA
-
-    for (i_shock in seq_len(n)) {
-      auxi_shock <- numeric(lags * n)
-      for (iauxi2 in seq_len(lags)) {
-        idx_s <- 1 + (iauxi2 - 1) * n
-        idx_e <- n + (iauxi2 - 1) * n
-        auxi_shock[idx_s:idx_e] <- Y1_shock[i_time - iauxi2, , i_shock]
-      }
-
-      reg_shock <- .build_reg_vec(constant, trend, tt, tt2, auxi_shock)
-
-      term1 <- matrix(reg_shock, nrow = 1) %*% ALPHA
-      term2 <- errors_str10[i_time - lags, , i_shock]
-
-      Y1_shock[i_time, , i_shock]         <- term1 + term2
-      Y1_shock_detrend[i_time, , i_shock] <-
-        Y1_shock[i_time, , i_shock] - Y1_shock_det[i_time, ]
-    }
-
-    tt  <- tt + 1
-    tt2 <- tt^2
-  }
-
-  list(
-    hist_matrix   = Y1_shock_detrend,
-    deterministic = Y1_shock_det,
-    errors_str    = errors_str
-  )
+  hd <- with(inputs, decompose_history(A0, ALPHA, Y, X, n, lags, trend,
+                                       constant, datestar = NULL))
+  hd[c("hist_matrix", "deterministic", "errors_str")]
 }
 
 
-#' Historical decomposition with intervention (stop) path
+#' Historical decomposition with an intervention path
 #'
-#' Extends [hist_decomposition()] by simultaneously computing a counterfactual
-#' path where structural errors are zeroed out in the last `datestar` periods.
-#' This separates the contribution of shocks occurring on/after the event from
-#' those that occurred before.
+#' Like [hist_decomposition()], but also decomposes an intervention path on
+#' which all structural errors after a given date are set to zero. ETVAR uses
+#' it to separate the target shocks up to and including the event date from
+#' the target shocks that arrive afterwards.
 #'
 #' @inheritParams hist_decomposition
-#' @param datestar Integer. Number of periods from the end of the sample in
-#'   which structural errors are set to zero (intervention window).
-#' @return Named list:
+#' @param datestar Integer. Number of periods at the end of the sample whose
+#'   structural errors are set to zero on the intervention path. In [etvar()]
+#'   this is the number of observations after the first event date.
+#' @return A list with the elements of [hist_decomposition()] and
 #'   \describe{
-#'     \item{hist_matrix}{Array (Traw x n x n). Detrended shock contributions.}
-#'     \item{deterministic}{Matrix (Traw x n). Deterministic component.}
-#'     \item{errors_str}{Matrix (T_eff x n). Structural errors.}
-#'     \item{hist_matrix_stop}{Array (Traw x n x n). Detrended contributions
-#'       on the intervention path.}
-#'     \item{all_data}{Array (Traw x n x n). Full (non-detrended) shock paths.}
+#'     \item{hist_matrix_stop}{Array (T x n x n). Shock contributions on the
+#'       intervention path.}
+#'     \item{all_data}{Array (T x n x n). `all_data[, , s]` is the path the
+#'       model implies when only shock `s` operates: the deterministic
+#'       component plus the contribution of shock `s`.}
 #'   }
 #' @examples
 #' set.seed(1)
 #' y <- matrix(rnorm(300), ncol = 3)
 #' var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
-#' A0 <- -t(chol(var_est$SIGMA))
+#' A0 <- t(chol(var_est$SIGMA))  # recursive (Cholesky) identification
 #' hd <- hist_decomposition_3d(A0, var_est$ALPHA, var_est$Y, var_est$X,
 #'                             n = 3, lags = 2, trend = 0, constant = 1,
 #'                             datestar = 20)
@@ -174,149 +79,43 @@ hist_decomposition_3d <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
   inputs <- .etvar_validate_decomposition(
     A0, ALPHA, Y, X, n, lags, trend, constant
   )
-  A0 <- inputs$A0
-  ALPHA <- inputs$ALPHA
-  Y <- inputs$Y
-  X <- inputs$X
-  n <- inputs$n
-  lags <- inputs$lags
-  trend <- inputs$trend
-  constant <- inputs$constant
   datestar <- .etvar_integer_scalar(datestar, "datestar", min = 0L,
-                                    max = nrow(Y))
-  Traw <- nrow(Y) + lags
-
-  errors_red <- Y - X %*% ALPHA
-  errors_str <- t(solve(A0, t(errors_red)))
-
-  errors_str_stop <- errors_str
-  if (datestar > 0) {
-    idx_s <- nrow(errors_str_stop) - datestar + 1
-    idx_e <- nrow(errors_str_stop)
-    errors_str_stop[idx_s:idx_e, ] <- 0
-  }
-
-  Y1_shock_detrend      <- array(0, dim = c(Traw, n, n))
-  Y1_shock_detrend_stop <- array(0, dim = c(Traw, n, n))
-  errors_str10          <- array(0, dim = c(Traw - lags, n, n))
-  errors_str10_stop     <- array(0, dim = c(Traw - lags, n, n))
-  Y1_shock              <- array(0, dim = c(Traw, n, n))
-  Y1_shock_stop         <- array(0, dim = c(Traw, n, n))
-  Y1_shock_det          <- matrix(0, nrow = Traw, ncol = n)
-
-  nc <- as.integer(constant == 1L)
-  nt <- trend
-
-  for (i_lag in seq_len(lags)) {
-    idx_end   <- (lags - (i_lag - 1)) * n + (nc + nt)
-    idx_start <- idx_end - n + 1
-    val <- X[1, idx_start:idx_end]
-    Y1_shock_det[i_lag, ] <- val
-    for (i in seq_len(n)) {
-      Y1_shock[i_lag, , i]      <- val
-      Y1_shock_stop[i_lag, , i] <- val
-    }
-  }
-
-  auxi_det <- numeric(lags * n)
-  for (i in seq_len(lags)) {
-    idx_s <- 1 + (i - 1) * n
-    idx_e <- n + (i - 1) * n
-    auxi_det[idx_s:idx_e] <- Y1_shock_det[(lags + 1) - i, ]
-  }
-
-  for (i in seq_len(n)) {
-    lala      <- matrix(0, nrow = Traw - lags, ncol = n)
-    lala[, i] <- errors_str[, i]
-    errors_str10[, , i] <- t(A0 %*% t(lala))
-    lala[, i] <- errors_str_stop[, i]
-    errors_str10_stop[, , i] <- t(A0 %*% t(lala))
-  }
-
-  auxi_shock      <- numeric(lags * n)
-  auxi_shock_stop <- numeric(lags * n)
-  tt  <- 1
-  tt2 <- 1
-
-  for (i_time in seq.int(lags + 1L, Traw)) {
-    for (iauxi in seq_len(lags)) {
-      idx_s <- 1 + (iauxi - 1) * n
-      idx_e <- n + (iauxi - 1) * n
-      auxi_det[idx_s:idx_e] <- Y1_shock_det[i_time - iauxi, ]
-    }
-
-    reg_det <- .build_reg_vec(constant, trend, tt, tt2, auxi_det)
-    Y1_shock_det[i_time, ] <- reg_det %*% ALPHA
-
-    for (i_shock in seq_len(n)) {
-      for (iauxi2 in seq_len(lags)) {
-        idx_s <- 1 + (iauxi2 - 1) * n
-        idx_e <- n + (iauxi2 - 1) * n
-        auxi_shock[idx_s:idx_e]      <- Y1_shock[i_time - iauxi2, , i_shock]
-        auxi_shock_stop[idx_s:idx_e] <-
-          Y1_shock_stop[i_time - iauxi2, , i_shock]
-      }
-
-      err_idx <- i_time - lags
-
-      reg_shock <- .build_reg_vec(constant, trend, tt, tt2, auxi_shock)
-      Y1_shock[i_time, , i_shock] <-
-        (reg_shock %*% ALPHA) + errors_str10[err_idx, , i_shock]
-      Y1_shock_detrend[i_time, , i_shock] <-
-        Y1_shock[i_time, , i_shock] - Y1_shock_det[i_time, ]
-
-      reg_stop <- .build_reg_vec(constant, trend, tt, tt2, auxi_shock_stop)
-      Y1_shock_stop[i_time, , i_shock] <-
-        (reg_stop %*% ALPHA) + errors_str10_stop[err_idx, , i_shock]
-      Y1_shock_detrend_stop[i_time, , i_shock] <-
-        Y1_shock_stop[i_time, , i_shock] - Y1_shock_det[i_time, ]
-    }
-
-    tt  <- tt + 1
-    tt2 <- tt^2
-  }
-
-  list(
-    hist_matrix      = Y1_shock_detrend,
-    deterministic    = Y1_shock_det,
-    errors_str       = errors_str,
-    hist_matrix_stop = Y1_shock_detrend_stop,
-    all_data         = Y1_shock
-  )
+                                    max = nrow(inputs$Y))
+  with(inputs, decompose_history(A0, ALPHA, Y, X, n, lags, trend, constant,
+                                 datestar = datestar))
 }
 
 
 #' Rearrange shock contributions from a historical decomposition
 #'
-#' Permutes the 3-D decomposition array from (Time × Variable × Shock) to
-#' (Time × Shock × Variable) and extracts convenient per-shock matrices.
-#' Generalises beyond a single "tariff shock": specify `target_shock` to
-#' choose which shock to isolate.
+#' Pulls the pieces that the ETVAR plots need out of the (time x variable x
+#' shock) arrays returned by [hist_decomposition_3d()]: the contribution of
+#' the target shock, the sum over all other shocks and, when an intervention
+#' path is supplied, the split of the target contribution into the part up to
+#' the event and the part after it.
 #'
-#' @param hist_matrix      Array (T x n x n). Detrended shock contributions
-#'   from [hist_decomposition()] or [hist_decomposition_3d()].
-#' @param hist_matrix_stop Array (T x n x n). Intervention-path contributions
-#'   (from [hist_decomposition_3d()]). Pass `NULL` if no intervention path
-#'   was computed.
-#' @param T_obs            Integer. Number of observations.
-#' @param n                Integer. Number of variables / shocks.
-#' @param target_shock     Integer. Which shock to isolate. Default 1.
-#' @return Named list:
+#' @param hist_matrix Array (T x n x n). Shock contributions from
+#'   [hist_decomposition()] or [hist_decomposition_3d()].
+#' @param hist_matrix_stop Array (T x n x n) of intervention-path
+#'   contributions from [hist_decomposition_3d()], or `NULL`.
+#' @param T_obs Integer. Number of observations T.
+#' @param n Integer. Number of variables (and shocks).
+#' @param target_shock Integer. The shock to isolate. Default 1.
+#' @return A list of T x n matrices:
 #'   \describe{
-#'     \item{total}{Matrix (T x n). Sum of all shock contributions per
-#'       variable.}
-#'     \item{target}{Matrix (T x n). Contribution of the target shock.}
-#'     \item{target_stop}{Matrix (T x n). Target shock on the intervention path
-#'       (or `NULL`).}
-#'     \item{target_rest}{Matrix (T x n). Continued target shocks
-#'       (target - target_stop), or `NULL`.}
-#'     \item{others}{Matrix (T x n). All shocks except the target.}
+#'     \item{total}{Sum of all shock contributions.}
+#'     \item{target}{Contribution of the target shock.}
+#'     \item{target_stop}{Target-shock contribution on the intervention path,
+#'       or `NULL`.}
+#'     \item{target_rest}{`target - target_stop`: the effect of target shocks
+#'       after the intervention date, or `NULL`.}
+#'     \item{others}{Contribution of all other shocks combined.}
 #'   }
 #' @examples
 #' set.seed(1)
 #' y <- matrix(rnorm(300), ncol = 3)
 #' var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
-#' A0 <- -t(chol(var_est$SIGMA))
+#' A0 <- t(chol(var_est$SIGMA))  # recursive (Cholesky) identification
 #' hd <- hist_decomposition_3d(A0, var_est$ALPHA, var_est$Y, var_est$X,
 #'                             n = 3, lags = 2, trend = 0, constant = 1,
 #'                             datestar = 20)
@@ -329,43 +128,85 @@ rearrange_shocks <- function(hist_matrix, hist_matrix_stop = NULL,
   T_obs <- .etvar_integer_scalar(T_obs, "T_obs", min = 1L)
   n <- .etvar_integer_scalar(n, "n", min = 1L)
   target_shock <- .etvar_integer_scalar(target_shock, "target_shock",
-                                         min = 1L, max = n)
-  hist_matrix <- .etvar_numeric_array(
-    hist_matrix, "hist_matrix", c(T_obs, n, n)
-  )
+                                        min = 1L, max = n)
+  hist_matrix <- .etvar_numeric_array(hist_matrix, "hist_matrix",
+                                      c(T_obs, n, n))
   if (!is.null(hist_matrix_stop)) {
     hist_matrix_stop <- .etvar_numeric_array(
       hist_matrix_stop, "hist_matrix_stop", c(T_obs, n, n)
     )
   }
 
-  hist_all      <- array(0, dim = c(T_obs, n, n))
-  has_stop      <- !is.null(hist_matrix_stop)
-  if (has_stop) hist_all_stop <- array(0, dim = c(T_obs, n, n))
-
-  for (i in seq_len(n)) {
-    hist_all[, , i] <- hist_matrix[, i, ]
-    if (has_stop) hist_all_stop[, , i] <- hist_matrix_stop[, i, ]
+  total <- rowSums(hist_matrix, dims = 2L)
+  target <- matrix(hist_matrix[, , target_shock], nrow = T_obs, ncol = n)
+  target_stop <- NULL
+  target_rest <- NULL
+  if (!is.null(hist_matrix_stop)) {
+    target_stop <- matrix(hist_matrix_stop[, , target_shock],
+                          nrow = T_obs, ncol = n)
+    target_rest <- target - target_stop
   }
-
-  total       <- matrix(0, nrow = T_obs, ncol = n)
-  target_mat  <- matrix(0, nrow = T_obs, ncol = n)
-  target_stop <- if (has_stop) matrix(0, nrow = T_obs, ncol = n) else NULL
-
-  for (iv in seq_len(n)) {
-    target_mat[, iv] <- hist_all[, target_shock, iv]
-    total[, iv]      <- rowSums(hist_all[, , iv])
-    if (has_stop) target_stop[, iv] <- hist_all_stop[, target_shock, iv]
-  }
-
-  others      <- total - target_mat
-  target_rest <- if (has_stop) target_mat - target_stop else NULL
 
   list(
-    total       = total,
-    target      = target_mat,
+    total = total,
+    target = target,
     target_stop = target_stop,
     target_rest = target_rest,
-    others      = others
+    others = total - target
   )
+}
+
+
+# Shared engine for the two decomposition functions (inputs already
+# validated). Each shock's contribution follows the VAR recursion from a zero
+# start, driven only by A0[, s] times that shock's structural errors.
+decompose_history <- function(A0, ALPHA, Y, X, n, lags, trend, constant,
+                              datestar = NULL) {
+  n_obs <- nrow(Y)
+  errors_str <- t(solve(A0, t(Y - X %*% ALPHA)))
+  deterministic <- deterministic_path(ALPHA, X, n, lags, trend, constant)
+  slopes <- lag_coefficients(ALPHA, n, lags, constant, trend)
+  zeros <- matrix(0, nrow = lags, ncol = n)
+
+  contributions <- function(errors) {
+    out <- array(0, dim = c(n_obs + lags, n, n))
+    for (s in seq_len(n)) {
+      out[-seq_len(lags), , s] <- var_recursion(
+        slopes, zeros, outer(errors[, s], A0[, s])
+      )
+    }
+    out
+  }
+
+  hist_matrix <- contributions(errors_str)
+  out <- list(
+    hist_matrix = hist_matrix,
+    deterministic = deterministic,
+    errors_str = errors_str
+  )
+  if (is.null(datestar)) {
+    return(out)
+  }
+
+  errors_stop <- errors_str
+  if (datestar > 0L) {
+    errors_stop[seq.int(n_obs - datestar + 1L, n_obs), ] <- 0
+  }
+  out$hist_matrix_stop <- contributions(errors_stop)
+  out$all_data <- sweep(hist_matrix, c(1L, 2L), deterministic, "+")
+  out
+}
+
+# Contribution of a single structural error -- shock `shock` at effective
+# row `row` -- to all variables over the raw sample: zero before that date,
+# then the impulse response scaled by the size of the error.
+single_error_contribution <- function(var_est, A0, errors_str, shock, row) {
+  n <- var_est$n
+  lags <- var_est$lags
+  offset <- matrix(0, nrow = nrow(errors_str), ncol = n)
+  offset[row, ] <- A0[, shock] * errors_str[row, shock]
+  slopes <- lag_coefficients(var_est$ALPHA, n, lags, var_est$constant,
+                             var_est$trend)
+  path <- var_recursion(slopes, matrix(0, nrow = lags, ncol = n), offset)
+  rbind(matrix(0, nrow = lags, ncol = n), path)
 }

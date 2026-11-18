@@ -2,13 +2,13 @@
 % Please edit documentation in R/plots.R
 \name{plot_etvar_hd}
 \alias{plot_etvar_hd}
-\title{Plot historical decomposition as stacked bar charts}
+\title{Plot the historical decomposition around the event}
 \usage{
 plot_etvar_hd(
   date_vec,
   data,
   deterministic,
-  target_stop,
+  target_event,
   target_rest,
   others,
   datestar,
@@ -18,67 +18,64 @@ plot_etvar_hd(
   title = NULL,
   merge_target_components = FALSE,
   shock_labels = c("Event shock", "Continued shocks", "Other shocks"),
-  open_device = FALSE,
-  ask = interactive(),
   variables = NULL,
   facet_ncol = 2L
 )
 }
 \arguments{
-\item{date_vec}{Date vector of length T.}
+\item{date_vec}{Vector of dates, one per row of \code{data}.}
 
-\item{data}{Matrix (T x n). Observed data.}
+\item{data}{Matrix (T x n) of observed data.}
 
-\item{deterministic}{Matrix (T x n). Deterministic trend component.}
+\item{deterministic}{Matrix (T x n). Deterministic component.}
 
-\item{target_stop}{Matrix (T x n). Event-date target shock
-(intervention path).}
+\item{target_event}{Matrix (T x n). Contribution of the event-date target
+shock, e.g. \code{fit$shock_contributions$target_event}.}
 
-\item{target_rest}{Matrix (T x n). Continued target shocks after the
-event.}
+\item{target_rest}{Matrix (T x n). Contribution of target shocks after the
+event date.}
 
-\item{others}{Matrix (T x n). Combined non-target shocks.}
+\item{others}{Matrix (T x n). Contribution of everything else.}
 
-\item{datestar}{Integer. Offset from end marking the event date.}
+\item{datestar}{Integer. Number of observations after the event date.}
 
-\item{variable_names}{Character vector of length n.}
+\item{variable_names}{Character vector of n variable names.}
 
-\item{n_tail}{Integer. Number of trailing observations. Default 41.}
+\item{n_tail}{Integer. Number of trailing observations to show. Default 41.}
 
-\item{x_break_every}{Integer. Show every k-th date label on the x-axis
-Default 2.}
+\item{x_break_every}{Integer. Label every \code{x_break_every}-th date. Default
+2.}
 
-\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses
-\code{"Historical decomposition"}, and \code{NA} removes the title.}
+\item{title}{Character, \code{NULL} or \code{NA}. \code{NULL} gives a default title and
+\code{NA} removes it.}
 
-\item{merge_target_components}{Logical. If \code{TRUE}, merge \code{target_stop}
-(event shock) and \code{target_rest} (continued target shocks) into a single
-target-shock bar component. Default \code{FALSE}.}
+\item{merge_target_components}{Logical. Show \code{target_event + target_rest}
+as a single target-shock component? Default \code{FALSE}.}
 
-\item{shock_labels}{Character vector of length 3. Labels for the three
-bar components. Default: \code{c("Event shock", "Continued shocks", "Other shocks")}.}
+\item{shock_labels}{Character vector of three legend labels for the
+components.}
 
-\item{open_device}{Deprecated compatibility argument. It is validated but
-otherwise ignored because the function now returns a ggplot object.}
+\item{variables}{Integer vector or \code{NULL}. Variables to show; \code{NULL} shows
+all of them.}
 
-\item{ask}{Deprecated compatibility argument. It is validated but otherwise
-ignored; faceted plots never prompt between variables.}
-
-\item{variables}{Integer vector or \code{NULL}. Variables to display. \code{NULL}
-displays all variables.}
-
-\item{facet_ncol}{Integer. Number of facet columns. Default 2.}
+\item{facet_ncol}{Integer. Number of panel columns. Default 2.}
 }
 \value{
 A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
-For each variable, produces a stacked bar chart showing the contributions of
-(1) the event-date target shock, (2) continued target shocks after the event,
-and (3) all other shocks. The actual detrended data is overlaid as a black
-line, and a vertical red line marks the event date. Within the positive and
-negative parts of each bar, the event shock is stacked from zero, followed
-by continued target shocks and then all other shocks.
+Stacked bars of three contributions -- the target shock on the event date,
+target shocks after it, and everything else -- with the data (net of the
+deterministic component) as a black line and a red line at the event date.
+The three contributions add up to the line. Positive and negative
+contributions are stacked separately, each starting from zero with the
+event shock.
+}
+\details{
+\code{\link[=plot.etvar]{plot.etvar()}} counts the target shocks \emph{before} the event among the other
+shocks. To show the target shocks up to and including the event instead,
+pass \code{fit$shock_contributions$target_stop} as \code{target_event} and
+\code{fit$shock_contributions$others} as \code{others}.
 }
 \examples{
 set.seed(1)
@@ -86,15 +83,16 @@ y <- matrix(rnorm(300), ncol = 3,
             dimnames = list(NULL, c("x1", "x2", "x3")))
 dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
 fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+parts <- fit$shock_contributions
 plot_etvar_hd(
-  date_vec       = fit$dates,
-  data           = fit$data,
-  deterministic  = fit$hd$deterministic,
-  target_stop    = fit$shock_contributions$target_stop,
-  target_rest    = fit$shock_contributions$target_rest,
-  others         = fit$shock_contributions$others,
-  datestar       = fit$datestar,
+  date_vec = fit$dates,
+  data = fit$data,
+  deterministic = fit$hd$deterministic,
+  target_event = parts$target_event,
+  target_rest = parts$target_rest,
+  others = parts$others + parts$target_before,
+  datestar = fit$datestar,
   variable_names = fit$variable_names,
-  n_tail         = 30
+  n_tail = 30
 )
 }

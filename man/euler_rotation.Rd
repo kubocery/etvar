@@ -2,27 +2,27 @@
 % Please edit documentation in R/rotation.R
 \name{euler_rotation}
 \alias{euler_rotation}
-\title{Construct an orthogonal rotation matrix from Givens angles}
+\title{Orthogonal rotation from Givens angles}
 \usage{
 euler_rotation(theta, n)
 }
 \arguments{
-\item{theta}{Numeric vector of length \code{n*(n-1)/2}. Rotation angles (radians).}
+\item{theta}{Numeric vector of \code{n * (n - 1) / 2} angles, in radians.}
 
-\item{n}{Integer. Dimension of the rotation matrix.}
+\item{n}{Integer. Dimension of the rotation.}
 }
 \value{
-Matrix (n x n). Orthogonal rotation matrix with determinant +1.
+An n x n orthogonal matrix with determinant 1.
 }
 \description{
-Builds an \code{n}-dimensional orthogonal rotation matrix by composing
-\code{n*(n-1)/2} elementary Givens rotations, one for each pair of coordinate
-planes. This parameterization maps a vector of unconstrained angles to the
-space of orthogonal matrices. It remains available for constructing legacy
-full-rotation starting values; \code{\link[=etvar]{etvar()}} itself optimises only the selected
-target-shock direction.
+Builds an n x n rotation matrix as the product of the \code{n * (n - 1) / 2}
+elementary Givens rotations, one for each pair of coordinates, in the order
+(1, 2), (1, 3), ..., (n - 1, n). This full parameterisation is what the
+original MATLAB implementation of ETVAR optimised. \code{\link[=etvar]{etvar()}} itself only
+estimates the target column of the rotation, but rotations built here can
+still be used as starting values (\code{start_parameterization = "full"}).
 }
 \examples{
 Q <- euler_rotation(c(0.5, -0.3, 1.2), n = 3)
-round(t(Q) \%*\% Q, 10)  # Should be identity
+round(crossprod(Q), 10)
 }

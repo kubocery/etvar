@@ -5,27 +5,17 @@
 \alias{etvar-package}
 \title{etvar: Event-Targeted Vector Autoregression}
 \description{
-Estimate structural VAR models identified by targeting one or more event
-dates.
-The package finds the orthogonal rotation of the Cholesky factor that best
-explains observed event-date movements using a single structural shock. It
-provides impulse responses, structural forecast error variance
-decompositions, historical decompositions, and diagnostic plots.
-}
-\section{Main functions}{
+Structural VAR models identified by one or more event dates: the target
+shock is the rotation of the Cholesky shocks that best explains how all
+variables moved on those dates.
 
-\describe{
-\item{\code{\link[=etvar]{etvar()}}}{One-call estimation: VAR + optimisation + decomposition.}
-\item{\code{\link[=estimate_var]{estimate_var()}}}{Reduced-form VAR estimation.}
-\item{\code{\link[=etvar_optimize]{etvar_optimize()}}}{Three-stage optimisation of the target-shock
-direction.}
-\item{\code{\link[=compute_fevd]{compute_fevd()}}}{Structural forecast error variance decomposition.}
-\item{\code{\link[=hist_decomposition]{hist_decomposition()}}}{Historical decomposition.}
-\item{\code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}}{Historical decomposition with
-intervention path.}
+Start with \code{\link[=etvar]{etvar()}}, which fits the whole model, and look at the result
+with \code{\link[=plot.etvar]{plot.etvar()}}, \code{\link[=compute_fevd]{compute_fevd()}} and \code{\link[=compute_irf_confint]{compute_irf_confint()}}. The
+building blocks are available on their own: \code{\link[=estimate_var]{estimate_var()}} for the
+reduced-form VAR, \code{\link[=etvar_objective]{etvar_objective()}} and \code{\link[=etvar_optimize]{etvar_optimize()}} for the
+identification, \code{\link[=compute_structural_irfs]{compute_structural_irfs()}}, \code{\link[=hist_decomposition]{hist_decomposition()}} and
+\code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}} for the structural analysis.
 }
-}
-
 \references{
 Pinter, G., Smets, F. and Üslü, S. (2025). Market whiplash after the
 2025 tariff shock: an event-targeted VAR approach. \emph{BIS Working Papers},
@@ -41,11 +31,11 @@ Useful links:
 
 }
 \author{
-\strong{Maintainer}: Jakub Cery \email{jakub.cery@euba.sk}
+\strong{Maintainer}: Jakub Cery \email{jakub.cery@euba.sk} [copyright holder]
 
 Authors:
 \itemize{
-  \item Jakub Cery \email{jakub.cery@euba.sk}
+  \item Jakub Cery \email{jakub.cery@euba.sk} [copyright holder]
 }
 
 }

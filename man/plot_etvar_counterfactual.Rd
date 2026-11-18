@@ -2,7 +2,7 @@
 % Please edit documentation in R/plots.R
 \name{plot_etvar_counterfactual}
 \alias{plot_etvar_counterfactual}
-\title{Plot counterfactual versus realised paths}
+\title{Plot observed data against a shock-only path}
 \usage{
 plot_etvar_counterfactual(
   date_vec,
@@ -19,43 +19,42 @@ plot_etvar_counterfactual(
 )
 }
 \arguments{
-\item{date_vec}{Date vector. Full date index.}
+\item{date_vec}{Vector of dates, one per row of \code{realized}.}
 
-\item{realized}{Numeric vector or matrix. Observed data, with variables
-in columns.}
+\item{realized}{Numeric vector or matrix of observed data, variables in
+columns.}
 
-\item{counterfactual}{Numeric vector or matrix with the same dimensions as
-\code{realized}. Model-implied paths.}
+\item{counterfactual}{Numeric vector or matrix of the same shape: the
+model-implied paths.}
 
-\item{n_tail}{Integer. Number of trailing observations to display.
-Default 40.}
+\item{n_tail}{Integer. Number of trailing observations to show. Default 40.}
 
-\item{x_date_breaks}{Character. Date break spacing passed to
-\code{\link[ggplot2:scale_x_date]{ggplot2::scale_x_date()}} (e.g. \code{"1 week"}, \code{"2 weeks"}, \code{"1 month"}).
-Default \code{"1 week"}.}
+\item{x_date_breaks}{Character. Spacing of the date labels, passed to
+\code{\link[ggplot2:scale_x_date]{ggplot2::scale_x_date()}}, e.g. \code{"2 weeks"}. Default \code{"1 week"}.}
 
-\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses
-\code{"Counterfactual versus realised paths"}, and \code{NA} removes the title.}
+\item{title}{Character, \code{NULL} or \code{NA}. \code{NULL} gives a default title and
+\code{NA} removes it.}
 
 \item{ylab}{Character. Y-axis label. Default \code{""}.}
 
-\item{legend_position}{Legend position passed to \code{\link[ggplot2:theme]{ggplot2::theme()}}. Default
+\item{legend_position}{Legend position for \code{\link[ggplot2:theme]{ggplot2::theme()}}. Default
 \code{"bottom"}.}
 
-\item{variable_names}{Character vector with one label per variable. If
-\code{NULL}, column names are used when available, otherwise \code{V1}, \code{V2}, ...}
+\item{variable_names}{Character vector, one name per variable, or \code{NULL}
+for the column names of \code{realized} (or \code{V1}, \code{V2}, ...).}
 
-\item{variables}{Integer vector or \code{NULL}. Variables to display. \code{NULL}
-displays all variables.}
+\item{variables}{Integer vector or \code{NULL}. Variables to show; \code{NULL} shows
+all of them.}
 
-\item{facet_ncol}{Integer. Number of facet columns. Default 2.}
+\item{facet_ncol}{Integer. Number of panel columns. Default 2.}
 }
 \value{
 A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
-Creates a faceted ggplot comparing the model-implied counterfactual paths
-(driven by the selected structural shock only) against the observed data.
+Compares the observed data with a model-implied path, typically the path
+the model implies when only the target shock operates
+(\code{fit$hd$all_data[, , fit$shock_index]}).
 }
 \examples{
 set.seed(1)
@@ -64,10 +63,10 @@ y <- matrix(rnorm(300), ncol = 3,
 dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
 fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
 plot_etvar_counterfactual(
-  date_vec       = fit$dates,
-  realized       = fit$data,
+  date_vec = fit$dates,
+  realized = fit$data,
   counterfactual = fit$hd$all_data[, , fit$shock_index],
   variable_names = fit$variable_names,
-  n_tail         = 30
+  n_tail = 30
 )
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/var_estimation.R
 \name{estimate_var}
 \alias{estimate_var}
-\title{Estimate a reduced-form VAR model}
+\title{Estimate a reduced-form VAR}
 \usage{
 estimate_var(
   data,
@@ -14,55 +14,55 @@ estimate_var(
 )
 }
 \arguments{
-\item{data}{Matrix (T x n). Observed time-series data.}
+\item{data}{Matrix or data frame (T x n) of observed series.}
 
 \item{lags}{Integer. Number of lags p.}
 
-\item{constant}{Logical or integer. Include an intercept? Default \code{TRUE}.}
+\item{constant}{Logical. Include an intercept? Default \code{TRUE}.}
 
-\item{trend}{Integer. Trend specification: 0 = none, 1 = linear,
+\item{trend}{Integer. Deterministic trend: 0 = none, 1 = linear,
 2 = quadratic. Default 0.}
 
-\item{nimp_wold}{Integer. Number of horizons for the Wold decomposition.
-Default 100.}
+\item{nimp_wold}{Integer. Number of horizons (including horizon zero) for
+the Wold multipliers. Default 100.}
 
 \item{estimation_rows}{Integer row indices or a logical vector selecting
-which rows of the effective sample (\code{Y} and \code{X}) are used to estimate the
-VAR coefficients and innovation covariance. Residuals are still evaluated
-for the full effective sample. \code{NULL} uses every effective-sample row.}
+the rows of the effective sample (\code{Y} and \code{X}) used to estimate the
+coefficients and the covariance matrix. Residuals are still computed for
+the whole effective sample. \code{NULL} (the default) uses every row.}
 }
 \value{
-A named list (class \code{"etvar_var"}) with elements:
+A list of class \code{"etvar_var"} with elements:
 \describe{
-\item{Y}{Dependent variable matrix (T_eff x n).}
-\item{X}{Regressor matrix (T_eff x k).}
+\item{Y}{Dependent variables over the effective sample (T_eff x n),
+i.e. \code{data} without its first \code{lags} rows.}
+\item{X}{Regressors (T_eff x k): deterministic terms followed by the
+lags of all variables.}
 \item{ALPHA}{OLS coefficients (k x n).}
-\item{SIGMA}{Error covariance matrix (n x n).}
-\item{eps}{Cholesky-orthogonalized residuals (T_eff x n).}
-\item{residuals}{OLS residuals evaluated over the full effective sample
-(T_eff x n).}
-\item{residuals_estimation}{OLS residuals for the estimation rows.}
-\item{estimation_rows}{Indices of the effective-sample rows used for
-estimation.}
-\item{companion}{Companion matrix (n\emph{lags x n}lags).}
-\item{wimpu}{Wold multiplier array (nL x nL x nimp_wold).}
-\item{cimpu}{Cholesky IRFs (n x n x nimp_wold).}
-\item{n}{Number of variables.}
-\item{lags}{Number of lags.}
-\item{constant}{Constant flag (integer).}
-\item{trend}{Trend order (integer).}
-\item{data}{Original data matrix.}
+\item{SIGMA}{Residual covariance matrix (n x n).}
+\item{eps}{Cholesky-orthogonalised residuals (T_eff x n).}
+\item{residuals}{Residuals over the whole effective sample (T_eff x n).}
+\item{residuals_estimation}{Residuals of the estimation rows.}
+\item{estimation_rows}{Effective-sample rows used for estimation.}
+\item{nobs_estimation}{Number of estimation rows.}
+\item{companion}{Companion matrix (n p x n p).}
+\item{wimpu}{Powers of the companion matrix (n p x n p x
+\code{nimp_wold}); the top-left n x n block of slice h + 1 is the
+horizon-h Wold multiplier.}
+\item{cimpu}{Cholesky impulse responses (n x n x \code{nimp_wold}).}
+\item{n, lags, constant, trend}{The model specification.}
+\item{data}{The data as a numeric matrix.}
 }
 }
 \description{
-Estimates a VAR(p) by OLS, computes the error covariance matrix (with
-degrees-of-freedom correction), Cholesky-orthogonalized shocks, the
-companion matrix, and the Wold impulse response representation.
+Fits a VAR(p) by OLS, equation by equation. Besides the coefficients and the
+residual covariance matrix (with a degrees-of-freedom correction), the
+result holds the companion matrix and the reduced-form moving-average
+(Wold) multipliers that the rest of the package builds on.
 }
 \examples{
-# Estimate a VAR(4) on simulated data
 set.seed(1)
-Y <- matrix(rnorm(500), ncol = 2)
-var_est <- estimate_var(Y, lags = 4)
-var_est$n
+y <- matrix(rnorm(500), ncol = 2)
+var_est <- estimate_var(y, lags = 4)
+var_est$ALPHA
 }

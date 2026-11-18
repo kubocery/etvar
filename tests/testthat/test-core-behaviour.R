@@ -62,13 +62,14 @@ test_that("public estimators reject invalid scalar and data inputs", {
 })
 
 test_that("verbose sequential optimisation enables live optim tracing", {
-  data <- make_core_test_data(n_obs = 45L)
+  set.seed(408)
+  data <- matrix(stats::rnorm(135L), ncol = 3L)
   var_est <- estimate_var(data, lags = 2L, nimp_wold = 3L)
 
   output <- capture.output(
     suppressMessages(suppressWarnings(
       etvar_optimize(
-        start = 0,
+        start = c(0, 0),
         var_est = var_est,
         target_obs = 30L,
         control_nm = list(reltol = 1e-6, maxit = 1L, trace = 0),
@@ -124,7 +125,6 @@ test_that("target-direction parameterisation replaces the full rotation", {
     verbose = FALSE
   )
   expect_length(fit$theta, 2L)
-  expect_identical(fit$parameterization, "target_direction")
   expect_equal(fit$target_direction, legacy_rotation[, 2L], tolerance = 1e-12)
   expect_equal(fit$rotation[, 2L], fit$target_direction, tolerance = 1e-12)
 })
@@ -210,7 +210,6 @@ test_that("optimiser returns n - 1 parameters and a valid completion", {
                tolerance = 1e-12)
   expect_equal(crossprod(result$rotation), diag(3L), tolerance = 1e-12)
   expect_equal(det(result$rotation), 1, tolerance = 1e-12)
-  expect_identical(result$parameterization, "target_direction")
   expect_named(result$optimization, c(
     "convergence", "message", "selected_stage", "selected_start",
     "objective_by_start_stage", "n_evaluations", "n_gradient_evaluations",
@@ -236,7 +235,7 @@ test_that("optimiser returns n - 1 parameters and a valid completion", {
   expect_equal(dim(result$optimization$start_values), c(1L, 2L))
 })
 
-test_that("etvar retains optimisation diagnostics and warns on nonzero convergence", {
+test_that("etvar() keeps diagnostics and warns on non-convergence", {
   set.seed(407)
   data <- matrix(stats::rnorm(165L), ncol = 3L)
   dates <- seq.Date(as.Date("2021-01-01"), by = "day", length.out = nrow(data))
@@ -306,10 +305,10 @@ test_that("bootstrap intervals and plotters handle fitted output", {
   )
   hd_plot <- plot_etvar_hd(
     dates, data, fit$hd$deterministic,
-    fit$shock_contributions$target_stop,
+    fit$shock_contributions$target_event,
     fit$shock_contributions$target_rest,
     fit$shock_contributions$others, fit$datestar,
-    fit$variable_names, ask = FALSE, variables = 2L
+    fit$variable_names, variables = 2L
   )
   error_plot <- plot_etvar_errors(
     dates[-seq_len(fit$var$lags)], fit$hd$errors_str[, 1L]
@@ -339,7 +338,7 @@ test_that("historical decomposition stacks the event shock from zero", {
     date_vec = dates,
     data = event + continued + others,
     deterministic = zero,
-    target_stop = event,
+    target_event = event,
     target_rest = continued,
     others = others,
     datestar = 1L,
@@ -376,10 +375,6 @@ test_that("plot.etvar uses consistent faceted selection interfaces", {
     expect_identical(levels(pl$data$Variable), "y2")
   }
 
-  legacy_plot <- plot(fit, type = "counterfactual", variable = 1L)
-  expect_s3_class(legacy_plot, "ggplot")
-  expect_identical(levels(legacy_plot$data$Variable), "y1")
-
   target_error <- plot(fit, type = "errors")
   expect_s3_class(target_error, "ggplot")
   expect_no_error(ggplot2::ggplot_build(target_error))
@@ -389,11 +384,8 @@ test_that("plot.etvar uses consistent faceted selection interfaces", {
   )
   expect_identical(target_error$labels$title, "Structural error")
   expect_identical(target_error$layers[[2L]]$aes_params$colour, "black")
-  legacy_error <- plot(fit, type = "errors", shock = 1L)
-  expect_identical(levels(legacy_error$data$Shock), "Target shock (1)")
+  other_error <- plot(fit, type = "errors", shock = 2L)
+  expect_identical(levels(other_error$data$Shock), "Shock 2")
 
-  expect_error(
-    plot(fit, type = "hd", variable = 1L, variables = 2L),
-    "only one"
-  )
+  expect_error(plot(fit, type = "errors", variables = 1L), "use `shock`")
 })

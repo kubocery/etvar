@@ -12,8 +12,7 @@
 \item{...}{Ignored.}
 }
 \value{
-\code{x}, invisibly. Called for its side effect of printing to the
-console.
+\code{x}, invisibly.
 }
 \description{
 Prints a short description of a fitted ETVAR model.

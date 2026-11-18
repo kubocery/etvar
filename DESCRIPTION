@@ -2,7 +2,7 @@ Package: etvar
 Title: Event-Targeted Vector Autoregression
 Version: 0.1.0
 Authors@R:
-    person("Jakub", "Cery", role = c("aut", "cre"),
+    person("Jakub", "Cery", role = c("aut", "cre", "cph"),
            email = "jakub.cery@euba.sk")
 Description: Estimates structural vector autoregressive (VAR) models identified
     by targeting one or more event dates, following the event-targeted VAR
@@ -30,6 +30,6 @@ Imports:
     utils
 Suggests:
     spelling,
-    testthat (>= 3.0.0)
+    testthat (>= 3.1.5)
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0

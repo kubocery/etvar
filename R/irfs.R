@@ -1,25 +1,22 @@
-# ==============================================================================
-# Structural impulse response functions
-# ==============================================================================
-
-#' Compute structural impulse response functions
+#' Structural impulse responses
 #'
-#' Multiplies each Wold impulse-response matrix by the structural impact
-#' matrix A0 to obtain the response of every variable to every structural
-#' shock at each horizon.
+#' Multiplies the reduced-form moving-average (Wold) multipliers by the impact
+#' matrix. The response at horizon h is `Psi_h %*% A0`, so column j traces
+#' the effect of a positive one-unit structural shock j (one standard
+#' deviation, since the structural shocks have unit variance). The sign
+#' matches the structural errors used in the historical decomposition.
 #'
 #' @param var_est An `etvar_var` object from [estimate_var()].
-#' @param A0      Matrix (n x n). Structural impact matrix.
-#' @param nimp    Integer. Number of impulse-response horizons, including
-#'   horizon zero. Default 30.
-#' @return Array (n x n x nimp) where element `[i, j, h]` is the response
-#'         of variable `i` to structural shock `j` at array position `h`;
-#'         position 1 is horizon zero.
+#' @param A0 Matrix (n x n). Structural impact matrix.
+#' @param nimp Integer. Number of horizons, including horizon zero. Default
+#'   30; at most `var_est`'s `nimp_wold`.
+#' @return Array (n x n x nimp). Element `[i, j, h]` is the response of
+#'   variable i to shock j at horizon h - 1.
 #' @examples
 #' set.seed(1)
 #' y <- matrix(rnorm(300), ncol = 3)
 #' var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
-#' A0 <- -t(chol(var_est$SIGMA))
+#' A0 <- t(chol(var_est$SIGMA))  # recursive (Cholesky) identification
 #' irfs <- compute_structural_irfs(var_est, A0, nimp = 10)
 #' irfs[, 1, 1:3]  # responses to shock 1 at horizons 0-2
 #' @export
@@ -28,163 +25,49 @@ compute_structural_irfs <- function(var_est, A0, nimp = 30L) {
     stop("`var_est` must be an `etvar_var` object from `estimate_var()`.",
          call. = FALSE)
   }
-  n    <- var_est$n
+  n <- var_est$n
   nimp <- .etvar_integer_scalar(nimp, "nimp", min = 1L,
                                 max = dim(var_est$wimpu)[3L])
   A0 <- .etvar_numeric_matrix(A0, "A0")
   if (!identical(dim(A0), c(n, n))) {
     stop("`A0` must be an `n` by `n` matrix.", call. = FALSE)
   }
+
   irfs <- array(0, dim = c(n, n, nimp))
-
-  for (j in seq_len(nimp)) {
-    irfs[, , j] <- -var_est$wimpu[1:n, 1:n, j] %*% A0
-  }
-
-  irfs
-}
-
-
-#' Simulate one residual-bootstrap VAR sample
-#'
-#' @param var_est An `etvar_var` object from [estimate_var()].
-#' @return Matrix with the same dimensions as `var_est$data`.
-#' @keywords internal
-simulate_var_residual_bootstrap <- function(var_est) {
-  data     <- var_est$data
-  lags     <- var_est$lags
-  T_raw    <- nrow(data)
-  T_eff    <- T_raw - lags
-  n        <- var_est$n
-  residual_pool <- if (!is.null(var_est$residuals_estimation)) {
-    var_est$residuals_estimation
-  } else {
-    var_est$residuals
-  }
-  residuals <- sweep(residual_pool, 2, colMeans(residual_pool), "-")
-
-  if (lags < 1L) {
-    stop("Residual-bootstrap IRF intervals require `lags` >= 1.")
-  }
-
-  boot_data <- matrix(NA_real_, nrow = T_raw, ncol = n)
-  boot_data[seq_len(lags), ] <- data[seq_len(lags), , drop = FALSE]
-
-  draw_idx <- sample.int(nrow(residuals), size = T_eff, replace = TRUE)
-  boot_residuals <- residuals[draw_idx, , drop = FALSE]
-
-  # Split ALPHA into deterministic rows (constant, trend, squared trend) and
-  # lag rows. The deterministic part and the resampled residuals do not
-  # depend on the simulated path, so they are added for all periods at once.
-  ALPHA <- var_est$ALPHA
-  n_det <- var_est$constant + var_est$trend
-  lag_coefficients <- ALPHA[n_det + seq_len(n * lags), , drop = FALSE]
-  offset <- boot_residuals
-  if (n_det > 0L) {
-    tt <- seq_len(T_eff)
-    deterministic <- cbind(
-      if (var_est$constant == 1L) rep(1, T_eff),
-      if (var_est$trend >= 1L) tt,
-      if (var_est$trend >= 2L) tt^2
-    )
-    offset <- offset +
-      deterministic %*% ALPHA[seq_len(n_det), , drop = FALSE]
-  }
-
-  # Companion-form recursion: `state` stacks (y_{t-1}, ..., y_{t-p}), matching
-  # the column order of the lag block in the regressor matrix. The path is
-  # built column-wise (n x T_eff), which is much cheaper than row assignment.
-  transition <- t(lag_coefficients)
-  offset <- t(offset)
-  path <- matrix(0, nrow = n, ncol = T_eff)
-  state <- as.vector(t(data[lags:1L, , drop = FALSE]))
-  keep <- seq_len(n * (lags - 1L))
-  for (tt in seq_len(T_eff)) {
-    y <- offset[, tt] + transition %*% state
-    path[, tt] <- y
-    state <- c(y, state[keep])
-  }
-  boot_data[lags + seq_len(T_eff), ] <- t(path)
-
-  colnames(boot_data) <- colnames(data)
-  boot_data
-}
-
-
-# Re-estimate the VAR on one bootstrap sample and return its structural IRFs
-# for a fixed rotation `Q`. This is a lean version of estimate_var() plus
-# compute_structural_irfs(): it performs a single QR decomposition and builds
-# only the first n rows of the companion-matrix powers needed for the IRFs.
-.etvar_bootstrap_irfs <- function(boot_data, lags, constant, trend,
-                                  estimation_rows, Q, nimp) {
-  n <- ncol(boot_data)
-  Y <- trim_to_effective(boot_data, lags)
-  X <- build_var_regressors(boot_data, nrow(boot_data), n, lags, trend,
-                            constant)
-  if (!is.null(estimation_rows)) {
-    X <- X[estimation_rows, , drop = FALSE]
-    Y <- Y[estimation_rows, , drop = FALSE]
-  }
-  n_parameters <- ncol(X)
-  dof <- nrow(Y) - n_parameters
-  if (dof <= 0L) stop("Too few observations in the bootstrap sample.")
-
-  qr_x <- qr(X)
-  if (qr_x$rank < n_parameters) stop("Rank-deficient bootstrap regressors.")
-  ALPHA <- qr.coef(qr_x, Y)
-  residuals <- Y - X %*% ALPHA
-  SIGMA <- crossprod(residuals) / dof
-  A0 <- -t(chol(SIGMA)) %*% Q
-
-  companion <- build_companion(ALPHA, n, lags, constant, trend)
-  irfs <- array(0, dim = c(n, n, nimp))
-  power_rows <- diag(1, nrow = n, ncol = n * lags)
   for (h in seq_len(nimp)) {
-    if (h > 1L) power_rows <- power_rows %*% companion
-    irfs[, , h] <- -power_rows[, seq_len(n), drop = FALSE] %*% A0
+    irfs[, , h] <- var_est$wimpu[seq_len(n), seq_len(n), h] %*% A0
   }
   irfs
 }
 
 
-# Type-7 quantiles (the stats::quantile() default) of every row of `x`,
-# computed with one global sort instead of one quantile() call per row.
-.etvar_row_quantiles <- function(x, prob) {
-  n_draws <- ncol(x)
-  sorted <- matrix(x[order(row(x), x)], nrow = nrow(x), ncol = n_draws,
-                   byrow = TRUE)
-  index <- 1 + (n_draws - 1) * prob
-  lo <- floor(index)
-  hi <- ceiling(index)
-  out <- sorted[, lo]
-  h <- index - lo
-  upper <- sorted[, hi]
-  interpolate <- which(index > lo & upper != out)
-  out[interpolate] <- (1 - h) * out[interpolate] + h * upper[interpolate]
-  out
-}
-
-
-#' Compute bootstrap confidence intervals for structural IRFs
+#' Bootstrap confidence bands for structural impulse responses
 #'
-#' Builds residual-bootstrap samples from the fitted reduced-form VAR,
-#' re-estimates the VAR on each bootstrap sample, and recomputes structural
-#' IRFs using the fitted ETVAR target direction and its stored orthogonal
-#' completion. The rotation is held fixed so the structural shock labels stay
-#' aligned with the fitted model.
+#' Residual bootstrap: each draw runs the fitted VAR over its estimation
+#' sample, starting from the observed values just before it, with residuals
+#' resampled (whole rows, so the correlation between variables within a
+#' period is kept), re-estimates the VAR on the simulated data, and
+#' recomputes the impulse responses with the rotation of the fitted model
+#' held fixed. Holding the rotation fixed keeps
+#' the target shock the same shock in every draw. The bands are percentile
+#' intervals across the draws.
 #'
 #' @param object An `etvar` object.
-#' @param level Numeric. Confidence level. Default `0.95`.
-#' @param n_boot Integer. Number of successful bootstrap draws. Default `500`.
-#' @param seed Integer or `NULL`. Optional random seed. The caller's
-#'   random-number state is restored on exit.
-#' @param nimp Integer or `NULL`. Number of IRF horizons. Default: the number
-#'   of horizons stored in `object$irfs`.
-#' @param max_attempts Integer. Maximum bootstrap attempts. Extra attempts are
-#'   used when a draw fails because the bootstrap covariance matrix is not
-#'   positive definite.
-#' @return A list with `lower` and `upper` arrays, each with the same
-#'   dimensions as `object$irfs`, plus bootstrap metadata.
+#' @param level Numeric. Confidence level. Default 0.95.
+#' @param n_boot Integer. Number of successful draws. Default 500.
+#' @param seed Integer or `NULL`. Random seed for reproducible bands. The
+#'   caller's random-number state is restored afterwards.
+#' @param nimp Integer or `NULL`. Number of horizons. Defaults to the number
+#'   stored in `object$irfs`.
+#' @param max_attempts Integer. Maximum number of draws to try. A draw is
+#'   discarded and redrawn when its covariance matrix is not positive definite
+#'   or the simulated data explode. Default `3 * n_boot`.
+#' @return A list with `lower` and `upper` bounds (n x n x `nimp` arrays,
+#'   shaped like `object$irfs` with the default `nimp`), the individual
+#'   bootstrap responses in `draws` (n x n x `nimp` x `n_boot`), and the
+#'   settings (`level`, `n_boot` successful draws, `n_attempts`, `method`).
+#'   [plot_etvar_irfs()] uses `draws` to normalise each draw on its own when
+#'   the responses are rescaled with `scaling_index`.
 #' @examples
 #' set.seed(1)
 #' y <- matrix(rnorm(300), ncol = 3,
@@ -199,66 +82,45 @@ compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
                                 seed = NULL, nimp = NULL,
                                 max_attempts = n_boot * 3L) {
   if (!inherits(object, "etvar")) {
-    stop("`object` must be an `etvar` object.")
+    stop("`object` must be an `etvar` object.", call. = FALSE)
   }
-  if (!is.numeric(level) || length(level) != 1L ||
-      !is.finite(level) || level <= 0 || level >= 1) {
-    stop("`level` must be a numeric scalar between 0 and 1.")
+  if (!is.numeric(level) || length(level) != 1L || !is.finite(level) ||
+      level <= 0 || level >= 1) {
+    stop("`level` must be a number between 0 and 1.", call. = FALSE)
   }
-
   n_boot <- .etvar_integer_scalar(n_boot, "n_boot", min = 1L)
-
-  if (is.null(nimp)) nimp <- dim(object$irfs)[3]
+  if (is.null(nimp)) nimp <- dim(object$irfs)[3L]
   nimp <- .etvar_integer_scalar(nimp, "nimp", min = 1L)
-
   max_attempts <- .etvar_integer_scalar(max_attempts, "max_attempts",
-                                         min = n_boot)
+                                        min = n_boot)
+
+  n <- object$var$n
+  Q <- object$rotation
+  if (!is.numeric(Q) || !identical(dim(Q), c(n, n))) {
+    stop("`object$rotation` must be an `n` by `n` matrix.", call. = FALSE)
+  }
+
   if (!is.null(seed)) {
     seed <- .etvar_integer_scalar(seed, "seed", min = 0L,
                                   max = .Machine$integer.max)
-  }
-
-  if (!is.null(seed)) {
     old_rng <- .etvar_get_rng()
     on.exit(.etvar_restore_rng(old_rng), add = TRUE)
     set.seed(seed)
   }
 
-  n <- object$var$n
-  if (!is.null(object$rotation) &&
-      is.numeric(object$rotation) &&
-      identical(dim(object$rotation), c(n, n))) {
-    Q <- object$rotation
-  } else if (identical(object$parameterization, "target_direction")) {
-    Q <- .etvar_target_rotation(object$theta, n, object$shock_index)
-  } else {
-    # Compatibility with etvar objects created before target-direction
-    # parameterisation was introduced.
-    Q <- euler_rotation(object$theta, n)
-  }
-  draws  <- array(NA_real_, dim = c(n, n, nimp, n_boot))
+  var_est <- object$var
+  draws <- array(NA_real_, dim = c(n, n, nimp, n_boot))
   n_good <- 0L
-  n_try  <- 0L
-
+  n_try <- 0L
   while (n_good < n_boot && n_try < max_attempts) {
     n_try <- n_try + 1L
-
     boot_irfs <- tryCatch({
-      boot_data <- simulate_var_residual_bootstrap(object$var)
-      if (any(!is.finite(boot_data))) stop("Non-finite bootstrap sample.")
-      .etvar_bootstrap_irfs(
-        boot_data       = boot_data,
-        lags            = object$var$lags,
-        constant        = object$var$constant,
-        trend           = object$var$trend,
-        estimation_rows = object$var$estimation_rows,
-        Q               = Q,
-        nimp            = nimp
-      )
+      boot_data <- simulate_var_residual_bootstrap(var_est)
+      if (any(!is.finite(boot_data))) stop("explosive bootstrap sample")
+      bootstrap_irfs(boot_data, var_est, Q, nimp)
     }, error = function(e) NULL)
 
     if (is.null(boot_irfs) || any(!is.finite(boot_irfs))) next
-
     n_good <- n_good + 1L
     draws[, , , n_good] <- boot_irfs
   }
@@ -266,7 +128,6 @@ compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
   if (n_good == 0L) {
     stop("No valid bootstrap IRF draws were produced.", call. = FALSE)
   }
-
   if (n_good < n_boot) {
     warning("Only ", n_good, " valid bootstrap draws were produced after ",
             n_try, " attempts.", call. = FALSE)
@@ -274,19 +135,104 @@ compute_irf_confint <- function(object, level = 0.95, n_boot = 500L,
   }
 
   alpha <- 1 - level
-  draw_matrix <- matrix(draws, nrow = n * n * nimp, ncol = n_good)
-  lower <- array(.etvar_row_quantiles(draw_matrix, alpha / 2),
-                 dim = c(n, n, nimp))
-  upper <- array(.etvar_row_quantiles(draw_matrix, 1 - alpha / 2),
-                 dim = c(n, n, nimp))
-
+  flat <- matrix(draws, ncol = n_good)
   list(
-    lower        = lower,
-    upper        = upper,
-    level        = level,
-    n_boot       = n_good,
-    n_attempts   = n_try,
-    method       = "residual bootstrap",
-    fixed_theta  = TRUE
+    lower = array(row_quantiles(flat, alpha / 2), dim = c(n, n, nimp)),
+    upper = array(row_quantiles(flat, 1 - alpha / 2), dim = c(n, n, nimp)),
+    draws = draws,
+    level = level,
+    n_boot = n_good,
+    n_attempts = n_try,
+    method = "residual bootstrap",
+    fixed_theta = TRUE
   )
+}
+
+
+# Bootstrap helpers ------------------------------------------------------------
+
+# One bootstrap sample. The fitted VAR is run over the estimation window,
+# starting from the observed values just before it, with centred residuals
+# from the window drawn with replacement. Rows outside the window keep the
+# observed data; the re-estimation does not use them.
+simulate_var_residual_bootstrap <- function(var_est) {
+  data <- var_est$data
+  lags <- var_est$lags
+  n_obs <- nrow(data) - lags
+  rows <- var_est$estimation_rows
+  if (is.null(rows)) rows <- seq_len(n_obs)
+  simulated <- seq.int(min(rows), max(rows))
+
+  pool <- var_est$residuals_estimation
+  if (is.null(pool)) pool <- var_est$residuals
+  pool <- sweep(pool, 2L, colMeans(pool))
+  offset <- pool[sample.int(nrow(pool), size = length(simulated),
+                            replace = TRUE), , drop = FALSE]
+
+  n_det <- var_est$constant + var_est$trend
+  if (n_det > 0L) {
+    regressors <- deterministic_regressors(n_obs, var_est$constant,
+                                           var_est$trend)
+    offset <- offset + regressors[simulated, , drop = FALSE] %*%
+      var_est$ALPHA[seq_len(n_det), , drop = FALSE]
+  }
+
+  # Effective row r is raw row r + lags, so its lags are raw rows
+  # r, ..., r + lags - 1.
+  initial <- data[min(rows) - 1L + seq_len(lags), , drop = FALSE]
+  slopes <- lag_coefficients(var_est$ALPHA, var_est$n, lags,
+                             var_est$constant, var_est$trend)
+  out <- data
+  out[simulated + lags, ] <- var_recursion(slopes, initial, offset)
+  out
+}
+
+# Impulse responses for one bootstrap sample with the rotation Q held fixed.
+# A slimmed-down estimate_var(): one QR decomposition, and only the first n
+# rows of the companion powers.
+bootstrap_irfs <- function(boot_data, var_est, Q, nimp) {
+  n <- var_est$n
+  lags <- var_est$lags
+  constant <- var_est$constant
+  trend <- var_est$trend
+
+  Y <- trim_to_effective(boot_data, lags)
+  X <- build_var_regressors(boot_data, lags, trend, constant)
+  rows <- var_est$estimation_rows
+  if (!is.null(rows)) {
+    X <- X[rows, , drop = FALSE]
+    Y <- Y[rows, , drop = FALSE]
+  }
+
+  qr_x <- qr(X)
+  if (qr_x$rank < ncol(X)) stop("rank-deficient bootstrap regressors")
+  ALPHA <- qr.coef(qr_x, Y)
+  SIGMA <- crossprod(Y - X %*% ALPHA) / (nrow(X) - ncol(X))
+  A0 <- -t(chol(SIGMA)) %*% Q
+
+  companion <- build_companion(ALPHA, n, lags, constant, trend)
+  power_rows <- diag(1, nrow = n, ncol = n * lags)
+  irfs <- array(0, dim = c(n, n, nimp))
+  for (h in seq_len(nimp)) {
+    if (h > 1L) power_rows <- power_rows %*% companion
+    irfs[, , h] <- power_rows[, seq_len(n), drop = FALSE] %*% A0
+  }
+  irfs
+}
+
+# Type-7 quantiles (the stats::quantile() default) of every row of `x`, from
+# a single sort instead of one quantile() call per row.
+row_quantiles <- function(x, prob) {
+  n_draws <- ncol(x)
+  sorted <- matrix(x[order(row(x), x)], nrow = nrow(x), ncol = n_draws,
+                   byrow = TRUE)
+  index <- 1 + (n_draws - 1) * prob
+  lo <- floor(index)
+  hi <- ceiling(index)
+  h <- index - lo
+  out <- sorted[, lo]
+  upper <- sorted[, hi]
+  interpolate <- which(index > lo & upper != out)
+  out[interpolate] <- (1 - h) * out[interpolate] + h * upper[interpolate]
+  out
 }

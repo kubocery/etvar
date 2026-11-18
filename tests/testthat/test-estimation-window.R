@@ -54,7 +54,8 @@ test_that("VAR window estimates parameters but retains full-sample errors", {
   expect_equal(nrow(fit$shock_contributions$total), nrow(data))
   expect_named(
     fit$shock_contributions,
-    c("total", "target", "target_stop", "target_rest", "others")
+    c("total", "target", "target_stop", "target_rest", "others",
+      "target_event", "target_before")
   )
   expect_false("shocks" %in% names(fit))
   expect_true(all(is.finite(fit$hd$errors_str)))

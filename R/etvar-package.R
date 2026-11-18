@@ -1,30 +1,20 @@
 #' etvar: Event-Targeted Vector Autoregression
 #'
 #' @description
-#' Estimate structural VAR models identified by targeting one or more event
-#' dates.
-#' The package finds the orthogonal rotation of the Cholesky factor that best
-#' explains observed event-date movements using a single structural shock. It
-#' provides impulse responses, structural forecast error variance
-#' decompositions, historical decompositions, and diagnostic plots.
+#' Structural VAR models identified by one or more event dates: the target
+#' shock is the rotation of the Cholesky shocks that best explains how all
+#' variables moved on those dates.
 #'
-#' @section Main functions:
-#' \describe{
-#'   \item{[etvar()]}{One-call estimation: VAR + optimisation + decomposition.}
-#'   \item{[estimate_var()]}{Reduced-form VAR estimation.}
-#'   \item{[etvar_optimize()]}{Three-stage optimisation of the target-shock
-#'     direction.}
-#'   \item{[compute_fevd()]}{Structural forecast error variance decomposition.}
-#'   \item{[hist_decomposition()]}{Historical decomposition.}
-#'   \item{[hist_decomposition_3d()]}{Historical decomposition with
-#'     intervention path.}
-#' }
+#' Start with [etvar()], which fits the whole model, and look at the result
+#' with [plot.etvar()], [compute_fevd()] and [compute_irf_confint()]. The
+#' building blocks are available on their own: [estimate_var()] for the
+#' reduced-form VAR, [etvar_objective()] and [etvar_optimize()] for the
+#' identification, [compute_structural_irfs()], [hist_decomposition()] and
+#' [hist_decomposition_3d()] for the structural analysis.
 #'
 #' @references
 #' Pinter, G., Smets, F. and Üslü, S. (2025). Market whiplash after the
 #' 2025 tariff shock: an event-targeted VAR approach. *BIS Working Papers*,
 #' No. 1282. Bank for International Settlements.
 #' <https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach>
-#' @docType package
-#' @name etvar-package
 "_PACKAGE"

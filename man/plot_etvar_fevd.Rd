@@ -16,29 +16,27 @@ plot_etvar_fevd(
 \arguments{
 \item{fevd}{An \code{"etvar_fevd"} object from \code{\link[=compute_fevd]{compute_fevd()}}.}
 
-\item{variables}{Integer vector or \code{NULL}. Variables to display. The default
-displays every variable.}
+\item{variables}{Integer vector or \code{NULL}. Variables to show; \code{NULL} shows
+all of them.}
 
-\item{title}{Character, \code{NULL}, or \code{NA}. A scalar plot title. \code{NULL} uses
-\code{"Structural forecast error variance decomposition"} and \code{NA} removes the
-title.}
+\item{title}{Character, \code{NULL} or \code{NA}. \code{NULL} gives a default title and
+\code{NA} removes it.}
 
-\item{component_labels}{Character vector of length two. Labels for the target
-shock and all other shocks, respectively.}
+\item{component_labels}{Character vector of length two, or \code{NULL}. Legend
+labels for the target shock and the other shocks.}
 
 \item{colors}{Character vector of length two. Fill colours for the target
-shock and all other shocks, respectively.}
+shock and the other shocks.}
 
-\item{facet_ncol}{Integer. Number of columns in the faceted display.
-Default 2.}
+\item{facet_ncol}{Integer. Number of panel columns. Default 2.}
 }
 \value{
 A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
-Draws a stacked-bar FEVD for each selected variable. The two components are
-the event-targeted structural shock and the sum of all other structural
-shocks. At every variable and horizon, the two plotted shares sum to one.
+Stacked bars of the forecast error variance shares of the target shock and
+of all other shocks combined, by horizon, for each selected variable. The
+two shares add up to one.
 }
 \examples{
 set.seed(1)

@@ -1,27 +1,9 @@
-# ==============================================================================
-# Plotting functions for ETVAR results
-# ==============================================================================
-
-# Suppress R CMD check NOTEs for ggplot2 NSE columns
+# Column names used inside aes(); declared so R CMD check does not flag them.
 utils::globalVariables(c(
   "Value", "Series", "Structural_error", "dates",
   "Horizon", "Share", "Component", "Variable",
   "Response", "Lower", "Upper", "Shock"
 ))
-
-etvar_select_scalar_title <- function(title, default_title, arg = "title") {
-  if (is.null(title)) {
-    return(default_title)
-  }
-
-  if (length(title) != 1L) {
-    stop("`", arg, "` must be NULL, NA, or a character scalar for this plot.")
-  }
-
-  title <- as.character(title)
-  if (is.na(title)) "" else title
-}
-
 
 .etvar_plot_theme <- function(legend_position = "bottom") {
   ggplot2::theme_bw() +
@@ -35,25 +17,33 @@ etvar_select_scalar_title <- function(title, default_title, arg = "title") {
     )
 }
 
+# Facet labels for the selected variables; make.unique() keeps panels apart
+# when two variables share a name.
+panel_names <- function(variable_names, variables) {
+  make.unique(variable_names[variables], sep = " #")
+}
+
+rotated_dates <- function() {
+  ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45, hjust = 1))
+}
+
 
 #' Plot an ETVAR forecast error variance decomposition
 #'
-#' Draws a stacked-bar FEVD for each selected variable. The two components are
-#' the event-targeted structural shock and the sum of all other structural
-#' shocks. At every variable and horizon, the two plotted shares sum to one.
+#' Stacked bars of the forecast error variance shares of the target shock and
+#' of all other shocks combined, by horizon, for each selected variable. The
+#' two shares add up to one.
 #'
 #' @param fevd An `"etvar_fevd"` object from [compute_fevd()].
-#' @param variables Integer vector or `NULL`. Variables to display. The default
-#'   displays every variable.
-#' @param title Character, `NULL`, or `NA`. A scalar plot title. `NULL` uses
-#'   `"Structural forecast error variance decomposition"` and `NA` removes the
-#'   title.
-#' @param component_labels Character vector of length two. Labels for the target
-#'   shock and all other shocks, respectively.
+#' @param variables Integer vector or `NULL`. Variables to show; `NULL` shows
+#'   all of them.
+#' @param title Character, `NULL` or `NA`. `NULL` gives a default title and
+#'   `NA` removes it.
+#' @param component_labels Character vector of length two, or `NULL`. Legend
+#'   labels for the target shock and the other shocks.
 #' @param colors Character vector of length two. Fill colours for the target
-#'   shock and all other shocks, respectively.
-#' @param facet_ncol Integer. Number of columns in the faceted display.
-#'   Default 2.
+#'   shock and the other shocks.
+#' @param facet_ncol Integer. Number of panel columns. Default 2.
 #' @return A [ggplot2::ggplot] object.
 #' @examples
 #' set.seed(1)
@@ -63,18 +53,14 @@ etvar_select_scalar_title <- function(title, default_title, arg = "title") {
 #' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
 #' plot_etvar_fevd(compute_fevd(fit))
 #' @export
-plot_etvar_fevd <- function(
-    fevd,
-    variables = NULL,
-    title = NULL,
-    component_labels = NULL,
-    colors = c("#D95319", "#4DBEEE"),
-    facet_ncol = 2L) {
+plot_etvar_fevd <- function(fevd, variables = NULL, title = NULL,
+                            component_labels = NULL,
+                            colors = c("#D95319", "#4DBEEE"),
+                            facet_ncol = 2L) {
   if (!inherits(fevd, "etvar_fevd")) {
     stop("`fevd` must be an `etvar_fevd` object from `compute_fevd()`.",
          call. = FALSE)
   }
-
   target <- .etvar_numeric_matrix(fevd$target, "fevd$target")
   others <- .etvar_numeric_matrix(fevd$others, "fevd$others")
   if (!identical(dim(target), dim(others))) {
@@ -93,12 +79,13 @@ plot_etvar_fevd <- function(
       anyNA(variable_names) || any(!nzchar(variable_names))) {
     variable_names <- paste0("V", seq_len(n))
   }
-
   if (is.null(component_labels)) {
-    component_labels <- c(
-      paste0("Target shock (", fevd$target_shock, ")"),
-      "Other shocks"
-    )
+    first <- if (isFALSE(fevd$is_identified_shock)) {
+      paste("Shock", fevd$target_shock)
+    } else {
+      paste0("Target shock (", fevd$target_shock, ")")
+    }
+    component_labels <- c(first, "Other shocks")
   }
   if (!is.character(component_labels) || length(component_labels) != 2L ||
       anyNA(component_labels) || any(!nzchar(component_labels)) ||
@@ -106,62 +93,34 @@ plot_etvar_fevd <- function(
     stop("`component_labels` must contain two distinct, non-empty labels.",
          call. = FALSE)
   }
-  if (!is.character(colors) || length(colors) != 2L ||
-      anyNA(colors) || any(!nzchar(colors))) {
-    stop("`colors` must contain two non-empty color values.", call. = FALSE)
+  if (!is.character(colors) || length(colors) != 2L || anyNA(colors) ||
+      any(!nzchar(colors))) {
+    stop("`colors` must contain two non-empty colour values.", call. = FALSE)
   }
 
-  plot_title <- etvar_select_scalar_title(
-    title,
-    "Structural forecast error variance decomposition"
-  )
-  selected_names <- make.unique(variable_names[variables], sep = " #")
-  horizons <- seq_len(nimp)
-
-  target_values <- as.vector(t(target[variables, , drop = FALSE]))
-  other_values <- as.vector(t(others[variables, , drop = FALSE]))
-  variable_factor <- factor(
-    rep(selected_names, each = nimp),
-    levels = selected_names
-  )
-
+  labels <- panel_names(variable_names, variables)
+  panel <- factor(rep(labels, each = nimp), levels = labels)
+  horizon <- rep(seq_len(nimp), times = length(variables))
   plot_data <- rbind(
-    data.frame(
-      Horizon = rep(horizons, times = length(variables)),
-      Share = target_values,
-      Component = component_labels[1L],
-      Variable = variable_factor
-    ),
-    data.frame(
-      Horizon = rep(horizons, times = length(variables)),
-      Share = other_values,
-      Component = component_labels[2L],
-      Variable = variable_factor
-    )
+    data.frame(Horizon = horizon,
+               Share = as.vector(t(target[variables, , drop = FALSE])),
+               Component = component_labels[1L], Variable = panel),
+    data.frame(Horizon = horizon,
+               Share = as.vector(t(others[variables, , drop = FALSE])),
+               Component = component_labels[2L], Variable = panel)
   )
-  plot_data$Component <- factor(
-    plot_data$Component,
-    levels = component_labels
-  )
+  plot_data$Component <- factor(plot_data$Component, levels = component_labels)
 
-  ggplot2::ggplot(
-    plot_data,
-    ggplot2::aes(x = Horizon, y = Share, fill = Component)
-  ) +
-    ggplot2::geom_col(
-      width = 0.9,
-      color = "white",
-      linewidth = 0.1
-    ) +
+  ggplot2::ggplot(plot_data,
+                  ggplot2::aes(x = Horizon, y = Share, fill = Component)) +
+    ggplot2::geom_col(width = 0.9, color = "white", linewidth = 0.1) +
     ggplot2::facet_wrap(~Variable, ncol = facet_ncol) +
     ggplot2::scale_fill_manual(
       values = stats::setNames(colors, component_labels),
       breaks = component_labels
     ) +
     ggplot2::scale_x_continuous(
-      breaks = function(limits) {
-        unique(pmax(1, round(pretty(limits))))
-      }
+      breaks = function(limits) unique(pmax(1, round(pretty(limits))))
     ) +
     ggplot2::scale_y_continuous(
       breaks = seq(0, 1, by = 0.25),
@@ -173,37 +132,37 @@ plot_etvar_fevd <- function(
       x = "Forecast horizon",
       y = "Share of forecast error variance",
       fill = NULL,
-      title = plot_title
+      title = .etvar_title(title,
+                           "Structural forecast error variance decomposition")
     ) +
     .etvar_plot_theme()
 }
 
 
-#' Plot counterfactual versus realised paths
+#' Plot observed data against a shock-only path
 #'
-#' Creates a faceted ggplot comparing the model-implied counterfactual paths
-#' (driven by the selected structural shock only) against the observed data.
+#' Compares the observed data with a model-implied path, typically the path
+#' the model implies when only the target shock operates
+#' (`fit$hd$all_data[, , fit$shock_index]`).
 #'
-#' @param date_vec       Date vector. Full date index.
-#' @param realized       Numeric vector or matrix. Observed data, with variables
-#'   in columns.
-#' @param counterfactual Numeric vector or matrix with the same dimensions as
-#'   `realized`. Model-implied paths.
-#' @param n_tail   Integer. Number of trailing observations to display.
-#'   Default 40.
-#' @param x_date_breaks Character. Date break spacing passed to
-#'   [ggplot2::scale_x_date()] (e.g. `"1 week"`, `"2 weeks"`, `"1 month"`).
-#'   Default `"1 week"`.
-#' @param title Character scalar, `NULL`, or `NA`. `NULL` uses
-#'   `"Counterfactual versus realised paths"`, and `NA` removes the title.
-#' @param ylab     Character. Y-axis label. Default `""`.
-#' @param legend_position Legend position passed to [ggplot2::theme()]. Default
+#' @param date_vec Vector of dates, one per row of `realized`.
+#' @param realized Numeric vector or matrix of observed data, variables in
+#'   columns.
+#' @param counterfactual Numeric vector or matrix of the same shape: the
+#'   model-implied paths.
+#' @param n_tail Integer. Number of trailing observations to show. Default 40.
+#' @param x_date_breaks Character. Spacing of the date labels, passed to
+#'   [ggplot2::scale_x_date()], e.g. `"2 weeks"`. Default `"1 week"`.
+#' @param title Character, `NULL` or `NA`. `NULL` gives a default title and
+#'   `NA` removes it.
+#' @param ylab Character. Y-axis label. Default `""`.
+#' @param legend_position Legend position for [ggplot2::theme()]. Default
 #'   `"bottom"`.
-#' @param variable_names Character vector with one label per variable. If
-#'   `NULL`, column names are used when available, otherwise `V1`, `V2`, ...
-#' @param variables Integer vector or `NULL`. Variables to display. `NULL`
-#'   displays all variables.
-#' @param facet_ncol Integer. Number of facet columns. Default 2.
+#' @param variable_names Character vector, one name per variable, or `NULL`
+#'   for the column names of `realized` (or `V1`, `V2`, ...).
+#' @param variables Integer vector or `NULL`. Variables to show; `NULL` shows
+#'   all of them.
+#' @param facet_ncol Integer. Number of panel columns. Default 2.
 #' @return A [ggplot2::ggplot] object.
 #' @examples
 #' set.seed(1)
@@ -212,11 +171,11 @@ plot_etvar_fevd <- function(
 #' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
 #' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
 #' plot_etvar_counterfactual(
-#'   date_vec       = fit$dates,
-#'   realized       = fit$data,
+#'   date_vec = fit$dates,
+#'   realized = fit$data,
 #'   counterfactual = fit$hd$all_data[, , fit$shock_index],
 #'   variable_names = fit$variable_names,
-#'   n_tail         = 30
+#'   n_tail = 30
 #' )
 #' @export
 plot_etvar_counterfactual <- function(date_vec, realized, counterfactual,
@@ -229,112 +188,86 @@ plot_etvar_counterfactual <- function(date_vec, realized, counterfactual,
                                       facet_ncol = 2L) {
   date_vec <- .etvar_as_date(date_vec, "date_vec")
   n_tail <- .etvar_integer_scalar(n_tail, "n_tail", min = 1L)
-  if (is.numeric(realized) && is.null(dim(realized))) {
-    realized <- matrix(as.double(realized), ncol = 1L)
-  } else {
-    realized <- .etvar_numeric_matrix(realized, "realized")
+  as_columns <- function(x, arg) {
+    if (is.numeric(x) && is.null(dim(x))) {
+      return(matrix(as.double(x), ncol = 1L))
+    }
+    .etvar_numeric_matrix(x, arg)
   }
-  if (is.numeric(counterfactual) && is.null(dim(counterfactual))) {
-    counterfactual <- matrix(as.double(counterfactual), ncol = 1L)
-  } else {
-    counterfactual <- .etvar_numeric_matrix(counterfactual, "counterfactual")
-  }
+  realized <- as_columns(realized, "realized")
+  counterfactual <- as_columns(counterfactual, "counterfactual")
   if (!identical(dim(realized), dim(counterfactual)) ||
-      nrow(realized) != length(date_vec) || anyNA(realized) ||
-      anyNA(counterfactual) || any(!is.finite(realized)) ||
+      nrow(realized) != length(date_vec) || any(!is.finite(realized)) ||
       any(!is.finite(counterfactual))) {
     stop("`realized` and `counterfactual` must be finite numeric vectors or ",
          "matrices with one row per date and matching dimensions.",
          call. = FALSE)
   }
-  if (!is.character(x_date_breaks) || length(x_date_breaks) != 1L ||
-      is.na(x_date_breaks) || !nzchar(x_date_breaks)) {
-    stop("`x_date_breaks` must be a non-empty character scalar.",
-         call. = FALSE)
-  }
+  .etvar_string(x_date_breaks, "x_date_breaks")
   n <- ncol(realized)
   if (is.null(variable_names)) {
     variable_names <- colnames(realized)
     if (is.null(variable_names)) variable_names <- paste0("V", seq_len(n))
   }
-  if (!is.character(variable_names) || length(variable_names) != n ||
-      anyNA(variable_names) || any(!nzchar(variable_names))) {
-    stop("`variable_names` must contain one non-empty name per variable.",
-         call. = FALSE)
-  }
+  .etvar_check_labels(variable_names, n, "variable_names")
   if (is.null(variables)) variables <- seq_len(n)
   variables <- .etvar_index_vector(variables, "variables", n)
   facet_ncol <- .etvar_integer_scalar(facet_ncol, "facet_ncol", min = 1L)
-  title <- etvar_select_scalar_title(
-    title, "Counterfactual versus realised paths"
-  )
-  ylab <- etvar_select_scalar_title(ylab, "", arg = "ylab")
 
-  selected_dates <- utils::tail(date_vec, n_tail)
-  selected_rows <- utils::tail(
-    seq_len(nrow(realized)), length(selected_dates)
-  )
-  selected_names <- make.unique(variable_names[variables], sep = " #")
-  plot_long <- do.call(
-    rbind,
-    lapply(seq_along(variables), function(panel_index) {
-      variable_index <- variables[panel_index]
-      data.frame(
-        dates = rep(selected_dates, times = 2L),
-        Series = rep(c("Counterfactual", "Realized"),
-                     each = length(selected_dates)),
-        Value = c(
-          counterfactual[selected_rows, variable_index],
-          realized[selected_rows, variable_index]
-        ),
-        Variable = selected_names[panel_index]
-      )
-    })
-  )
-  plot_long$Variable <- factor(plot_long$Variable, levels = selected_names)
+  rows <- utils::tail(seq_along(date_vec), n_tail)
+  labels <- panel_names(variable_names, variables)
+  plot_data <- do.call(rbind, lapply(seq_along(variables), function(i) {
+    v <- variables[i]
+    data.frame(
+      dates = rep(date_vec[rows], times = 2L),
+      Series = rep(c("Counterfactual", "Realized"), each = length(rows)),
+      Value = c(counterfactual[rows, v], realized[rows, v]),
+      Variable = labels[i]
+    )
+  }))
+  plot_data$Variable <- factor(plot_data$Variable, levels = labels)
 
-  ggplot2::ggplot(plot_long,
-                  ggplot2::aes(x = dates, y = Value,
-                               linetype = Series, color = Series)) +
+  ggplot2::ggplot(plot_data, ggplot2::aes(x = dates, y = Value,
+                                          linetype = Series, color = Series)) +
     ggplot2::geom_line(linewidth = 0.8) +
-    ggplot2::facet_wrap(
-      ~Variable, ncol = facet_ncol, scales = "free_y"
-    ) +
+    ggplot2::facet_wrap(~Variable, ncol = facet_ncol, scales = "free_y") +
     ggplot2::scale_color_manual(
-      values = c("Realized" = "black", "Counterfactual" = "#0072B2")) +
+      values = c(Realized = "black", Counterfactual = "#0072B2")
+    ) +
     ggplot2::scale_linetype_manual(
-      values = c("Realized" = "solid", "Counterfactual" = "dashed")) +
+      values = c(Realized = "solid", Counterfactual = "dashed")
+    ) +
     ggplot2::scale_x_date(date_labels = "%b %d, %y",
                           date_breaks = x_date_breaks) +
-    ggplot2::labs(title = title, x = NULL, y = ylab) +
+    ggplot2::labs(
+      title = .etvar_title(title, "Counterfactual versus realised paths"),
+      x = NULL,
+      y = .etvar_title(ylab, "", arg = "ylab")
+    ) +
     .etvar_plot_theme(legend_position) +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)
-    )
+    rotated_dates()
 }
 
 
-#' Plot structural error time series
+#' Plot a structural error series
 #'
-#' Creates a ggplot of one structural error series with optional vertical event
-#' lines and text annotations. A facet strip identifies the plotted shock so
-#' that the visual style matches the other ETVAR plots.
+#' Line plot of one structural error series, optionally with vertical
+#' markers and labels at event dates.
 #'
-#' @param date_vec      Date vector. Full date index for the structural errors.
-#' @param errors Numeric vector. Structural error series.
-#' @param n_tail        Integer. Number of trailing observations. Default 100.
-#' @param event_dates   Date vector (or `NULL`). Dates at which to draw
-#'   vertical red dashed lines.
-#' @param event_labels  Character vector. Labels for the event dates.
-#' @param x_date_breaks Character. Date break spacing passed to
-#'   [ggplot2::scale_x_date()] (e.g. `"1 week"`, `"2 weeks"`, `"1 month"`).
-#'   Default `"1 week"`.
-#' @param title Character scalar, `NULL`, or `NA`. `NULL` uses
-#'   `"Structural error"`, and `NA` removes the title.
-#' @param panel_title Character scalar or `NULL`. Label displayed in the facet
-#'   strip. `NULL` uses `"Target shock"`.
-#' @param line_color Character scalar. Colour of the structural-error line.
-#'   Default `"black"`.
+#' @param date_vec Vector of dates, one per error (the effective sample).
+#' @param errors Numeric vector of structural errors.
+#' @param n_tail Integer. Number of trailing observations to show. Default
+#'   100.
+#' @param event_dates Dates to mark with dashed red lines, or `NULL`.
+#' @param event_labels Character vector of labels, one per event date, or
+#'   `NULL`.
+#' @param x_date_breaks Character. Spacing of the date labels, passed to
+#'   [ggplot2::scale_x_date()], e.g. `"2 weeks"`. Default `"1 week"`.
+#' @param title Character, `NULL` or `NA`. `NULL` gives a default title and
+#'   `NA` removes it.
+#' @param panel_title Character or `NULL`. Label of the panel strip; `NULL`
+#'   uses `"Target shock"`.
+#' @param line_color Character. Colour of the line. Default `"black"`.
 #' @return A [ggplot2::ggplot] object.
 #' @examples
 #' set.seed(1)
@@ -342,64 +275,50 @@ plot_etvar_counterfactual <- function(date_vec, realized, counterfactual,
 #'             dimnames = list(NULL, c("x1", "x2", "x3")))
 #' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
 #' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
-#' effective_dates <- fit$dates[(fit$var$lags + 1):length(fit$dates)]
 #' plot_etvar_errors(
-#'   date_vec     = effective_dates,
-#'   errors       = fit$hd$errors_str[, fit$shock_index],
-#'   n_tail       = 40,
-#'   event_dates  = fit$target_date,
+#'   date_vec = fit$dates[-(1:2)],
+#'   errors = fit$hd$errors_str[, fit$shock_index],
+#'   n_tail = 40,
+#'   event_dates = fit$target_date,
 #'   event_labels = "Event"
 #' )
 #' @export
 plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
-                               event_dates = NULL, event_labels = NULL,
-                               x_date_breaks = "1 week",
-                               title = NULL,
-                               panel_title = NULL,
-                               line_color = "black") {
+                              event_dates = NULL, event_labels = NULL,
+                              x_date_breaks = "1 week",
+                              title = NULL,
+                              panel_title = NULL,
+                              line_color = "black") {
   date_vec <- .etvar_as_date(date_vec, "date_vec")
   n_tail <- .etvar_integer_scalar(n_tail, "n_tail", min = 1L)
   if (!is.numeric(errors) || !is.null(dim(errors)) ||
-      length(errors) != length(date_vec) || anyNA(errors) ||
-      any(!is.finite(errors))) {
+      length(errors) != length(date_vec) || any(!is.finite(errors))) {
     stop("`errors` must be a finite numeric vector with one value per date.",
          call. = FALSE)
   }
-  if (!is.character(x_date_breaks) || length(x_date_breaks) != 1L ||
-      is.na(x_date_breaks) || !nzchar(x_date_breaks)) {
-    stop("`x_date_breaks` must be a non-empty character scalar.",
-         call. = FALSE)
-  }
-  panel_title <- etvar_select_scalar_title(
-    panel_title, "Target shock", arg = "panel_title"
+  .etvar_string(x_date_breaks, "x_date_breaks")
+  .etvar_string(line_color, "line_color")
+  panel_title <- .etvar_string(
+    .etvar_title(panel_title, "Target shock", arg = "panel_title"),
+    "panel_title"
   )
-  if (!nzchar(panel_title)) {
-    stop("`panel_title` must be a non-empty character scalar or `NULL`.",
-         call. = FALSE)
-  }
-  if (!is.character(line_color) || length(line_color) != 1L ||
-      is.na(line_color) || !nzchar(line_color)) {
-    stop("`line_color` must be a non-empty character scalar.", call. = FALSE)
-  }
-  title <- etvar_select_scalar_title(title, "Structural error")
   if (!is.null(event_dates)) {
     event_dates <- .etvar_as_date(event_dates, "event_dates")
   }
   if (!is.null(event_labels) &&
-      (!is.character(event_labels) || length(event_labels) != length(event_dates) ||
-       anyNA(event_labels))) {
+      (!is.character(event_labels) || anyNA(event_labels) ||
+       length(event_labels) != length(event_dates))) {
     stop("`event_labels` must contain one non-missing label per event date.",
          call. = FALSE)
   }
 
-  plot_df <- data.frame(
+  plot_data <- data.frame(
     dates = utils::tail(date_vec, n_tail),
     Structural_error = utils::tail(errors, n_tail),
-    Shock = panel_title
+    Shock = factor(panel_title)
   )
-  plot_df$Shock <- factor(plot_df$Shock, levels = panel_title)
 
-  pl <- ggplot2::ggplot(plot_df,
+  pl <- ggplot2::ggplot(plot_data,
                         ggplot2::aes(x = dates, y = Structural_error)) +
     ggplot2::geom_hline(yintercept = 0, linetype = "dashed",
                         color = "gray55", linewidth = 0.5) +
@@ -407,65 +326,61 @@ plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
     ggplot2::facet_wrap(~Shock, ncol = 1L) +
     ggplot2::scale_x_date(date_labels = "%b %d, %y",
                           date_breaks = x_date_breaks) +
-    ggplot2::labs(title = title, x = NULL, y = "Structural error") +
+    ggplot2::labs(title = .etvar_title(title, "Structural error"), x = NULL,
+                  y = "Structural error") +
     .etvar_plot_theme() +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)
-    )
+    rotated_dates()
 
-  if (!is.null(event_dates)) {
-    pl <- pl + ggplot2::geom_vline(
-      xintercept = event_dates, linetype = "dashed",
-      linewidth = 0.6, color = "red"
-    )
-    if (!is.null(event_labels)) {
-      n_evt <- length(event_dates)
-      for (k in seq_len(n_evt)) {
-        vj <- if (k <= n_evt / 2) -0.5 else 1.5
-        yi <- if (k <= n_evt / 2) -Inf else Inf
-        pl <- pl + ggplot2::annotate(
-          "text", x = event_dates[k], y = yi,
-          label = event_labels[k], hjust = 1.05, vjust = vj, size = 3
-        )
-      }
-    }
+  if (is.null(event_dates)) {
+    return(pl)
   }
-
+  pl <- pl + ggplot2::geom_vline(xintercept = event_dates, linetype = "dashed",
+                                 linewidth = 0.6, color = "red")
+  # Labels of the first half of the events go at the bottom, the rest at the
+  # top, so that neighbouring labels do not overlap.
+  for (k in seq_along(event_labels)) {
+    bottom <- k <= length(event_dates) / 2
+    pl <- pl + ggplot2::annotate(
+      "text", x = event_dates[k], y = if (bottom) -Inf else Inf,
+      label = event_labels[k], hjust = 1.05, vjust = if (bottom) -0.5 else 1.5,
+      size = 3
+    )
+  }
   pl
 }
 
 
-#' Plot structural impulse response functions
+#' Plot structural impulse responses
 #'
-#' Produces a faceted ggplot showing the normalised response of each selected
-#' variable to a chosen structural shock.
+#' One panel per selected variable showing its response to a chosen
+#' structural shock, optionally with confidence bands.
 #'
-#' @param irfs     Array (n x n x nimp). Structural IRFs from
+#' @param irfs Array (n x n x nimp) of impulse responses, as in
 #'   [compute_structural_irfs()].
-#' @param variable_names Character vector of length n. Variable labels.
-#' @param shock_index    Integer. Which shock to display. Default 1.
-#' @param scaling_index  Numeric vector `c(var, shock, horizon)`. The IRF
-#'   element used to normalise all responses. Default `NULL` (no normalisation).
-#' @param scaling_multiplier Numeric scalar. Multiplier applied after
-#'   normalisation. Use e.g. `0.5` to scale a unit-normalised shock to 0.5.
+#' @param variable_names Character vector of n variable names.
+#' @param shock_index Integer. The shock whose responses are shown. Default 1.
+#' @param scaling_index Integer vector `c(variable, shock, position)` or
+#'   `NULL`. If given, every response (and every bootstrap draw) is divided
+#'   by the element `irfs[variable, shock, position]`. `position` counts
+#'   along the horizon dimension from 1, so 1 is the impact response, shown
+#'   as horizon 0 in the plot. For example `c(2, 1, 1)` expresses the
+#'   responses relative to the impact response of variable 2.
+#' @param scaling_multiplier Number. Multiplies the responses after the
+#'   normalisation, e.g. `0.5` for a shock half the normalised size.
 #'   Default 1.
-#' @param common_ylim Logical. If `TRUE`, use a common y-axis range across
-#'   all displayed variables. If `FALSE`, each panel uses its own y-range.
-#'   Default `FALSE`.
-#' @param variables Integer vector. Which variables to plot (indices). Default:
-#'   all variables.
-#' @param title Character scalar, `NULL`, or `NA`. `NULL` uses
-#'   `"Structural impulse response functions"`, and `NA` removes the title.
-#' @param irf_ci Optional list with `lower` and `upper` arrays matching `irfs`,
-#'   typically from [compute_irf_confint()]. When supplied, confidence bands are
-#'   drawn around each IRF.
-#' @param conf_int Logical or `NULL`. If `TRUE`, draw confidence bands from
-#'   `irf_ci`; if `FALSE`, suppress them. The default `NULL` draws bands when
-#'   `irf_ci` is supplied. The standalone plotter cannot compute confidence
-#'   intervals from `irfs` alone.
-#' @param ci_col Fill colour for the confidence band.
-#' @param ci_border Border colour for the confidence band. Default `NA`.
-#' @param facet_ncol Integer. Number of facet columns. Default 2.
+#' @param common_ylim Logical. Use the same y axis in every panel? Default
+#'   `FALSE`.
+#' @param variables Integer vector or `NULL`. Variables to show; `NULL` shows
+#'   all of them.
+#' @param title Character, `NULL` or `NA`. `NULL` gives a default title and
+#'   `NA` removes it.
+#' @param irf_ci Optional list with `lower` and `upper` arrays shaped like
+#'   `irfs`, typically from [compute_irf_confint()]. If given, the bands are
+#'   drawn. When it also holds the bootstrap `draws` and the responses are
+#'   normalised with `scaling_index`, the bands are recomputed from the
+#'   normalised draws.
+#' @param ci_col,ci_border Fill and border colour of the bands.
+#' @param facet_ncol Integer. Number of panel columns. Default 2.
 #' @return A [ggplot2::ggplot] object.
 #' @examples
 #' set.seed(1)
@@ -476,183 +391,155 @@ plot_etvar_errors <- function(date_vec, errors, n_tail = 100L,
 #' plot_etvar_irfs(fit$irfs, fit$variable_names, shock_index = 1)
 #' @export
 plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
-                             scaling_index = NULL,
-                             scaling_multiplier = 1,
-                             common_ylim = FALSE,
-                             variables = NULL,
-                             title = NULL,
-                             irf_ci = NULL,
-                             conf_int = NULL,
-                             ci_col = grDevices::adjustcolor("gray70",
-                                                             alpha.f = 0.45),
-                             ci_border = NA,
-                             facet_ncol = 2L) {
+                            scaling_index = NULL,
+                            scaling_multiplier = 1,
+                            common_ylim = FALSE,
+                            variables = NULL,
+                            title = NULL,
+                            irf_ci = NULL,
+                            ci_col = grDevices::adjustcolor("gray70",
+                                                            alpha.f = 0.45),
+                            ci_border = NA,
+                            facet_ncol = 2L) {
   irfs <- .etvar_numeric_array(irfs, "irfs")
   if (length(dim(irfs)) != 3L || dim(irfs)[1L] != dim(irfs)[2L]) {
     stop("`irfs` must be an n by n by h numeric array.", call. = FALSE)
   }
-  n <- length(variable_names)
-  if (!is.character(variable_names) || n != dim(irfs)[1L] ||
-      anyNA(variable_names) || any(!nzchar(variable_names))) {
-    stop("`variable_names` must contain one non-empty name per variable.",
-         call. = FALSE)
-  }
+  n <- dim(irfs)[1L]
+  .etvar_check_labels(variable_names, n, "variable_names")
   shock_index <- .etvar_integer_scalar(shock_index, "shock_index",
-                                        min = 1L, max = n)
+                                       min = 1L, max = n)
   if (is.null(variables)) variables <- seq_len(n)
   variables <- .etvar_index_vector(variables, "variables", n)
   facet_ncol <- .etvar_integer_scalar(facet_ncol, "facet_ncol", min = 1L)
   if (!is.numeric(scaling_multiplier) || length(scaling_multiplier) != 1L ||
-      is.na(scaling_multiplier) || !is.finite(scaling_multiplier)) {
+      !is.finite(scaling_multiplier)) {
     stop("`scaling_multiplier` must be one finite number.", call. = FALSE)
   }
   common_ylim <- .etvar_flag(common_ylim, "common_ylim")
 
-  if (!is.null(conf_int) &&
-      (!is.logical(conf_int) || length(conf_int) != 1L || is.na(conf_int))) {
-    stop("`conf_int` must be TRUE, FALSE, or NULL.", call. = FALSE)
-  }
-
-  draw_ci <- if (is.null(conf_int)) !is.null(irf_ci) else isTRUE(conf_int)
-
-  if (draw_ci && is.null(irf_ci)) {
-    stop("`plot_etvar_irfs()` cannot compute confidence intervals from ",
-         "`irfs` alone. Use `compute_irf_confint(fit)` and pass the result ",
-         "as `irf_ci`, or call `plot(fit, type = \"irfs\", conf_int = TRUE)`.")
-  }
-
-  if (draw_ci) {
+  if (!is.null(irf_ci)) {
     if (!is.list(irf_ci) || is.null(irf_ci$lower) || is.null(irf_ci$upper)) {
       stop("`irf_ci` must be a list with `lower` and `upper` arrays.",
            call. = FALSE)
-    }
-    if (!identical(dim(irf_ci$lower), dim(irfs)) ||
-        !identical(dim(irf_ci$upper), dim(irfs))) {
-      stop("`irf_ci$lower` and `irf_ci$upper` must have the same dimensions ",
-           "as `irfs`.", call. = FALSE)
     }
     .etvar_numeric_array(irf_ci$lower, "irf_ci$lower", dim(irfs))
     .etvar_numeric_array(irf_ci$upper, "irf_ci$upper", dim(irfs))
   }
 
-  scaling_factor <- if (!is.null(scaling_index)) {
-    scaling_index <- .etvar_index_vector(
-      scaling_index, "scaling_index", max(dim(irfs))
-    )
-    if (length(scaling_index) != 3L ||
-        any(scaling_index > dim(irfs))) {
+  scale <- 1
+  if (!is.null(scaling_index)) {
+    scaling_index <- .etvar_index_vector(scaling_index, "scaling_index",
+                                         max(dim(irfs)))
+    if (length(scaling_index) != 3L || any(scaling_index > dim(irfs))) {
       stop("`scaling_index` must contain valid variable, shock, and horizon ",
            "indices.", call. = FALSE)
     }
-    irfs[scaling_index[1], scaling_index[2], scaling_index[3]]
-  } else {
-    1
-  }
-  if (!is.finite(scaling_factor) ||
-      abs(scaling_factor) <= sqrt(.Machine$double.eps)) {
-    stop("The IRF selected by `scaling_index` is zero or too close to zero.",
-         call. = FALSE)
+    scale <- irfs[scaling_index[1L], scaling_index[2L], scaling_index[3L]]
+    if (abs(scale) <= sqrt(.Machine$double.eps)) {
+      stop("The IRF selected by `scaling_index` is zero or too close to zero.",
+           call. = FALSE)
+    }
   }
 
-  selected_names <- make.unique(variable_names[variables], sep = " #")
-  plot_data <- do.call(
-    rbind,
-    lapply(seq_along(variables), function(panel_index) {
-      variable_index <- variables[panel_index]
-      response <- (irfs[variable_index, shock_index, ] / scaling_factor) *
-        scaling_multiplier
-      panel_data <- data.frame(
-        Horizon = seq_along(response) - 1L,
-        Response = as.double(response),
-        Variable = selected_names[panel_index]
-      )
-      if (draw_ci) {
-        lower <- (irf_ci$lower[variable_index, shock_index, ] /
-                    scaling_factor) * scaling_multiplier
-        upper <- (irf_ci$upper[variable_index, shock_index, ] /
-                    scaling_factor) * scaling_multiplier
-        panel_data$Lower <- as.double(pmin(lower, upper))
-        panel_data$Upper <- as.double(pmax(lower, upper))
-      }
-      panel_data
-    })
-  )
-  plot_data$Variable <- factor(plot_data$Variable, levels = selected_names)
-  plot_title <- etvar_select_scalar_title(
-    title, "Structural impulse response functions"
-  )
+  if (!is.null(irf_ci)) {
+    lower <- irf_ci$lower / scale
+    upper <- irf_ci$upper / scale
+    draws <- irf_ci$draws
+    if (!is.null(scaling_index) && !is.null(draws) &&
+        is.numeric(irf_ci$level) && identical(dim(draws)[1:3], dim(irfs))) {
+      # Bands of the normalised responses: divide every draw by its own
+      # scaling element before taking the quantiles.
+      alpha <- 1 - irf_ci$level
+      ratios <- sweep(draws, 4L, draws[scaling_index[1L], scaling_index[2L],
+                                       scaling_index[3L], ], "/")
+      ratios <- matrix(ratios, ncol = dim(draws)[4L])
+      lower <- array(row_quantiles(ratios, alpha / 2), dim = dim(irfs))
+      upper <- array(row_quantiles(ratios, 1 - alpha / 2), dim = dim(irfs))
+    }
+    # A negative scale or multiplier swaps the bounds.
+    lower <- lower * scaling_multiplier
+    upper <- upper * scaling_multiplier
+    band_low <- pmin(lower, upper)
+    upper <- pmax(lower, upper)
+    lower <- band_low
+  }
 
-  pl <- ggplot2::ggplot(
-    plot_data,
-    ggplot2::aes(x = Horizon, y = Response)
-  )
-
-  if (draw_ci) {
-    pl <- pl + ggplot2::geom_ribbon(
-      ggplot2::aes(ymin = Lower, ymax = Upper),
-      fill = ci_col,
-      colour = ci_border
+  labels <- panel_names(variable_names, variables)
+  plot_data <- do.call(rbind, lapply(seq_along(variables), function(i) {
+    v <- variables[i]
+    response <- irfs[v, shock_index, ] / scale * scaling_multiplier
+    panel <- data.frame(
+      Horizon = seq_along(response) - 1L,
+      Response = response,
+      Variable = labels[i]
     )
-  }
+    if (!is.null(irf_ci)) {
+      panel$Lower <- lower[v, shock_index, ]
+      panel$Upper <- upper[v, shock_index, ]
+    }
+    panel
+  }))
+  plot_data$Variable <- factor(plot_data$Variable, levels = labels)
 
+  pl <- ggplot2::ggplot(plot_data, ggplot2::aes(x = Horizon, y = Response))
+  if (!is.null(irf_ci)) {
+    pl <- pl + ggplot2::geom_ribbon(ggplot2::aes(ymin = Lower, ymax = Upper),
+                                    fill = ci_col, colour = ci_border)
+  }
   pl +
-    ggplot2::geom_hline(
-      yintercept = 0, color = "gray55", linetype = "dashed", linewidth = 0.5
-    ) +
+    ggplot2::geom_hline(yintercept = 0, color = "gray55", linetype = "dashed",
+                        linewidth = 0.5) +
     ggplot2::geom_line(linewidth = 0.8) +
     ggplot2::geom_point(shape = 1, size = 1.8) +
-    ggplot2::facet_wrap(
-      ~Variable,
-      ncol = facet_ncol,
-      scales = if (common_ylim) "fixed" else "free_y"
-    ) +
+    ggplot2::facet_wrap(~Variable, ncol = facet_ncol,
+                        scales = if (common_ylim) "fixed" else "free_y") +
     ggplot2::expand_limits(y = 0) +
     ggplot2::labs(
       x = "Forecast horizon",
       y = "Response",
-      title = plot_title
+      title = .etvar_title(title, "Structural impulse response functions")
     ) +
     .etvar_plot_theme()
 }
 
 
-#' Plot historical decomposition as stacked bar charts
+#' Plot the historical decomposition around the event
 #'
-#' For each variable, produces a stacked bar chart showing the contributions of
-#' (1) the event-date target shock, (2) continued target shocks after the event,
-#' and (3) all other shocks. The actual detrended data is overlaid as a black
-#' line, and a vertical red line marks the event date. Within the positive and
-#' negative parts of each bar, the event shock is stacked from zero, followed
-#' by continued target shocks and then all other shocks.
+#' Stacked bars of three contributions -- the target shock on the event date,
+#' target shocks after it, and everything else -- with the data (net of the
+#' deterministic component) as a black line and a red line at the event date.
+#' The three contributions add up to the line. Positive and negative
+#' contributions are stacked separately, each starting from zero with the
+#' event shock.
 #'
-#' @param date_vec         Date vector of length T.
-#' @param data             Matrix (T x n). Observed data.
-#' @param deterministic    Matrix (T x n). Deterministic trend component.
-#' @param target_stop      Matrix (T x n). Event-date target shock
-#'   (intervention path).
-#' @param target_rest      Matrix (T x n). Continued target shocks after the
-#'   event.
-#' @param others           Matrix (T x n). Combined non-target shocks.
-#' @param datestar         Integer. Offset from end marking the event date.
-#' @param variable_names   Character vector of length n.
-#' @param variables Integer vector or `NULL`. Variables to display. `NULL`
-#'   displays all variables.
-#' @param n_tail           Integer. Number of trailing observations. Default 41.
-#' @param x_break_every Integer. Show every k-th date label on the x-axis
-#'   Default 2.
-#' @param title Character scalar, `NULL`, or `NA`. `NULL` uses
-#'   `"Historical decomposition"`, and `NA` removes the title.
-#' @param merge_target_components Logical. If `TRUE`, merge `target_stop`
-#'   (event shock) and `target_rest` (continued target shocks) into a single
-#'   target-shock bar component. Default `FALSE`.
-#' @param shock_labels     Character vector of length 3. Labels for the three
-#'   bar components. Default: `c("Event shock", "Continued shocks",
-#'   "Other shocks")`.
-#' @param open_device Deprecated compatibility argument. It is validated but
-#'   otherwise ignored because the function now returns a ggplot object.
-#' @param ask Deprecated compatibility argument. It is validated but otherwise
-#'   ignored; faceted plots never prompt between variables.
-#' @param facet_ncol Integer. Number of facet columns. Default 2.
+#' [plot.etvar()] counts the target shocks *before* the event among the other
+#' shocks. To show the target shocks up to and including the event instead,
+#' pass `fit$shock_contributions$target_stop` as `target_event` and
+#' `fit$shock_contributions$others` as `others`.
+#'
+#' @param date_vec Vector of dates, one per row of `data`.
+#' @param data Matrix (T x n) of observed data.
+#' @param deterministic Matrix (T x n). Deterministic component.
+#' @param target_event Matrix (T x n). Contribution of the event-date target
+#'   shock, e.g. `fit$shock_contributions$target_event`.
+#' @param target_rest Matrix (T x n). Contribution of target shocks after the
+#'   event date.
+#' @param others Matrix (T x n). Contribution of everything else.
+#' @param datestar Integer. Number of observations after the event date.
+#' @param variable_names Character vector of n variable names.
+#' @param n_tail Integer. Number of trailing observations to show. Default 41.
+#' @param x_break_every Integer. Label every `x_break_every`-th date. Default
+#'   2.
+#' @param title Character, `NULL` or `NA`. `NULL` gives a default title and
+#'   `NA` removes it.
+#' @param merge_target_components Logical. Show `target_event + target_rest`
+#'   as a single target-shock component? Default `FALSE`.
+#' @param shock_labels Character vector of three legend labels for the
+#'   components.
+#' @param variables Integer vector or `NULL`. Variables to show; `NULL` shows
+#'   all of them.
+#' @param facet_ncol Integer. Number of panel columns. Default 2.
 #' @return A [ggplot2::ggplot] object.
 #' @examples
 #' set.seed(1)
@@ -660,31 +547,29 @@ plot_etvar_irfs <- function(irfs, variable_names, shock_index = 1L,
 #'             dimnames = list(NULL, c("x1", "x2", "x3")))
 #' dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
 #' fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
+#' parts <- fit$shock_contributions
 #' plot_etvar_hd(
-#'   date_vec       = fit$dates,
-#'   data           = fit$data,
-#'   deterministic  = fit$hd$deterministic,
-#'   target_stop    = fit$shock_contributions$target_stop,
-#'   target_rest    = fit$shock_contributions$target_rest,
-#'   others         = fit$shock_contributions$others,
-#'   datestar       = fit$datestar,
+#'   date_vec = fit$dates,
+#'   data = fit$data,
+#'   deterministic = fit$hd$deterministic,
+#'   target_event = parts$target_event,
+#'   target_rest = parts$target_rest,
+#'   others = parts$others + parts$target_before,
+#'   datestar = fit$datestar,
 #'   variable_names = fit$variable_names,
-#'   n_tail         = 30
+#'   n_tail = 30
 #' )
 #' @export
-plot_etvar_hd <- function(date_vec, data, deterministic, target_stop,
-                           target_rest, others, datestar, variable_names,
-                           n_tail = 41L,
-                           x_break_every = 2L,
-                           title = NULL,
-                           merge_target_components = FALSE,
-                           shock_labels = c("Event shock",
-                                            "Continued shocks",
-                                            "Other shocks"),
-                           open_device = FALSE,
-                           ask = interactive(),
-                           variables = NULL,
-                           facet_ncol = 2L) {
+plot_etvar_hd <- function(date_vec, data, deterministic, target_event,
+                          target_rest, others, datestar, variable_names,
+                          n_tail = 41L,
+                          x_break_every = 2L,
+                          title = NULL,
+                          merge_target_components = FALSE,
+                          shock_labels = c("Event shock", "Continued shocks",
+                                           "Other shocks"),
+                          variables = NULL,
+                          facet_ncol = 2L) {
   date_vec <- .etvar_as_date(date_vec, "date_vec")
   data <- .etvar_numeric_matrix(data)
   T_obs <- nrow(data)
@@ -692,148 +577,85 @@ plot_etvar_hd <- function(date_vec, data, deterministic, target_stop,
   if (length(date_vec) != T_obs) {
     stop("`date_vec` must contain one date per row of `data`.", call. = FALSE)
   }
-  expected_dim <- c(T_obs, n)
-  deterministic <- .etvar_numeric_matrix(deterministic, "deterministic")
-  target_stop <- .etvar_numeric_matrix(target_stop, "target_stop")
-  target_rest <- .etvar_numeric_matrix(target_rest, "target_rest")
-  others <- .etvar_numeric_matrix(others, "others")
-  matrices <- list(deterministic = deterministic, target_stop = target_stop,
-                   target_rest = target_rest, others = others)
-  if (any(!vapply(matrices, function(x) identical(dim(x), expected_dim),
+  parts <- list(deterministic = deterministic, target_event = target_event,
+                target_rest = target_rest, others = others)
+  parts <- Map(.etvar_numeric_matrix, parts, names(parts))
+  if (!all(vapply(parts, function(x) identical(dim(x), dim(data)),
                   logical(1)))) {
     stop("Decomposition matrices must have the same dimensions as `data`.",
          call. = FALSE)
   }
-  if (!is.character(variable_names) || length(variable_names) != n ||
-      anyNA(variable_names) || any(!nzchar(variable_names))) {
-    stop("`variable_names` must contain one non-empty name per variable.",
-         call. = FALSE)
-  }
+  .etvar_check_labels(variable_names, n, "variable_names")
   datestar <- .etvar_integer_scalar(datestar, "datestar", min = 0L,
                                     max = T_obs - 1L)
   if (is.null(variables)) variables <- seq_len(n)
   variables <- .etvar_index_vector(variables, "variables", n)
   n_tail <- .etvar_integer_scalar(n_tail, "n_tail", min = 1L)
   x_break_every <- .etvar_integer_scalar(x_break_every, "x_break_every",
-                                          min = 1L)
+                                         min = 1L)
   facet_ncol <- .etvar_integer_scalar(facet_ncol, "facet_ncol", min = 1L)
   merge_target_components <- .etvar_flag(merge_target_components,
-                                          "merge_target_components")
-  open_device <- .etvar_flag(open_device, "open_device")
-  ask <- .etvar_flag(ask, "ask")
+                                         "merge_target_components")
   if (!is.character(shock_labels) || length(shock_labels) != 3L ||
       anyNA(shock_labels) || any(!nzchar(shock_labels))) {
     stop("`shock_labels` must contain three non-empty labels.", call. = FALSE)
   }
 
-  start_idx  <- max(1, T_obs - n_tail + 1)
-  plot_idx   <- start_idx:T_obs
-  selected_dates <- date_vec[plot_idx]
-  selected_names <- make.unique(variable_names[variables], sep = " #")
-
+  rows <- seq.int(max(1L, T_obs - n_tail + 1L), T_obs)
   if (merge_target_components) {
-    components <- list(
-      target_stop[plot_idx, , drop = FALSE] +
-        target_rest[plot_idx, , drop = FALSE],
-      others[plot_idx, , drop = FALSE]
-    )
-    component_labels <- c(shock_labels[1L], shock_labels[3L])
+    components <- list(parts$target_event + parts$target_rest, parts$others)
+    component_labels <- shock_labels[c(1L, 3L)]
     component_colors <- c("#D95319", "#4DBEEE")
   } else {
-    components <- list(
-      target_stop[plot_idx, , drop = FALSE],
-      target_rest[plot_idx, , drop = FALSE],
-      others[plot_idx, , drop = FALSE]
-    )
+    components <- parts[c("target_event", "target_rest", "others")]
     component_labels <- shock_labels
     component_colors <- c("#D95319", "#EDB120", "#4DBEEE")
   }
 
-  component_data <- do.call(
-    rbind,
-    lapply(seq_along(variables), function(panel_index) {
-      variable_index <- variables[panel_index]
-      do.call(
-        rbind,
-        lapply(seq_along(components), function(component_index) {
-          data.frame(
-            dates = selected_dates,
-            Value = components[[component_index]][, variable_index],
-            Component = component_labels[component_index],
-            Variable = selected_names[panel_index]
-          )
-        })
-      )
-    })
-  )
-  component_data$Component <- factor(
-    component_data$Component, levels = component_labels
-  )
-  component_data$Variable <- factor(
-    component_data$Variable, levels = selected_names
-  )
+  labels <- panel_names(variable_names, variables)
+  bars <- do.call(rbind, lapply(seq_along(variables), function(i) {
+    do.call(rbind, lapply(seq_along(components), function(k) {
+      data.frame(dates = date_vec[rows],
+                 Value = components[[k]][rows, variables[i]],
+                 Component = component_labels[k],
+                 Variable = labels[i])
+    }))
+  }))
+  bars$Component <- factor(bars$Component, levels = component_labels)
+  bars$Variable <- factor(bars$Variable, levels = labels)
 
-  line_data <- do.call(
-    rbind,
-    lapply(seq_along(variables), function(panel_index) {
-      variable_index <- variables[panel_index]
-      data.frame(
-        dates = selected_dates,
-        Value = data[plot_idx, variable_index] -
-          deterministic[plot_idx, variable_index],
-        Variable = selected_names[panel_index]
-      )
-    })
-  )
-  line_data$Variable <- factor(line_data$Variable, levels = selected_names)
+  detrended <- data - parts$deterministic
+  line <- do.call(rbind, lapply(seq_along(variables), function(i) {
+    data.frame(dates = date_vec[rows],
+               Value = detrended[rows, variables[i]],
+               Variable = labels[i])
+  }))
+  line$Variable <- factor(line$Variable, levels = labels)
 
-  plot_title <- etvar_select_scalar_title(title, "Historical decomposition")
-  date_breaks <- selected_dates[
-    seq.int(1L, length(selected_dates), by = x_break_every)
-  ]
-  pl <- ggplot2::ggplot(
-    component_data,
-    ggplot2::aes(x = dates, y = Value, fill = Component)
-  ) +
-    ggplot2::geom_col(
-      width = 0.8,
-      colour = NA,
-      position = ggplot2::position_stack(reverse = TRUE)
-    ) +
+  breaks <- date_vec[rows][seq.int(1L, length(rows), by = x_break_every)]
+  pl <- ggplot2::ggplot(bars, ggplot2::aes(x = dates, y = Value,
+                                           fill = Component)) +
+    ggplot2::geom_col(width = 0.8, colour = NA,
+                      position = ggplot2::position_stack(reverse = TRUE)) +
     ggplot2::geom_hline(yintercept = 0, linewidth = 0.4) +
-    ggplot2::geom_line(
-      data = line_data,
-      ggplot2::aes(x = dates, y = Value, colour = "Data"),
-      inherit.aes = FALSE,
-      linewidth = 0.8
-    ) +
+    ggplot2::geom_line(data = line,
+                       ggplot2::aes(x = dates, y = Value, colour = "Data"),
+                       inherit.aes = FALSE, linewidth = 0.8) +
     ggplot2::facet_wrap(~Variable, ncol = facet_ncol, scales = "free_y") +
     ggplot2::scale_fill_manual(
       values = stats::setNames(component_colors, component_labels)
     ) +
-    ggplot2::scale_colour_manual(values = c("Data" = "black")) +
-    ggplot2::scale_x_date(
-      breaks = date_breaks,
-      date_labels = "%b %d, %Y"
-    ) +
-    ggplot2::labs(
-      x = NULL,
-      y = "Detrended values",
-      title = plot_title
-    ) +
+    ggplot2::scale_colour_manual(values = c(Data = "black")) +
+    ggplot2::scale_x_date(breaks = breaks, date_labels = "%b %d, %Y") +
+    ggplot2::labs(x = NULL, y = "Detrended values",
+                  title = .etvar_title(title, "Historical decomposition")) +
     .etvar_plot_theme() +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)
-    )
+    rotated_dates()
 
-  target_index <- T_obs - datestar
-  if (target_index %in% plot_idx) {
-    pl <- pl + ggplot2::geom_vline(
-      xintercept = date_vec[target_index],
-      colour = "red",
-      linewidth = 0.8
-    )
+  event_row <- T_obs - datestar
+  if (event_row %in% rows) {
+    pl <- pl + ggplot2::geom_vline(xintercept = date_vec[event_row],
+                                   colour = "red", linewidth = 0.8)
   }
-
   pl
 }

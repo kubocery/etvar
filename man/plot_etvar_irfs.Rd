@@ -2,7 +2,7 @@
 % Please edit documentation in R/plots.R
 \name{plot_etvar_irfs}
 \alias{plot_etvar_irfs}
-\title{Plot structural impulse response functions}
+\title{Plot structural impulse responses}
 \usage{
 plot_etvar_irfs(
   irfs,
@@ -14,58 +14,55 @@ plot_etvar_irfs(
   variables = NULL,
   title = NULL,
   irf_ci = NULL,
-  conf_int = NULL,
   ci_col = grDevices::adjustcolor("gray70", alpha.f = 0.45),
   ci_border = NA,
   facet_ncol = 2L
 )
 }
 \arguments{
-\item{irfs}{Array (n x n x nimp). Structural IRFs from
+\item{irfs}{Array (n x n x nimp) of impulse responses, as in
 \code{\link[=compute_structural_irfs]{compute_structural_irfs()}}.}
 
-\item{variable_names}{Character vector of length n. Variable labels.}
+\item{variable_names}{Character vector of n variable names.}
 
-\item{shock_index}{Integer. Which shock to display. Default 1.}
+\item{shock_index}{Integer. The shock whose responses are shown. Default 1.}
 
-\item{scaling_index}{Numeric vector \code{c(var, shock, horizon)}. The IRF
-element used to normalise all responses. Default \code{NULL} (no normalisation).}
+\item{scaling_index}{Integer vector \code{c(variable, shock, position)} or
+\code{NULL}. If given, every response (and every bootstrap draw) is divided
+by the element \code{irfs[variable, shock, position]}. \code{position} counts
+along the horizon dimension from 1, so 1 is the impact response, shown
+as horizon 0 in the plot. For example \code{c(2, 1, 1)} expresses the
+responses relative to the impact response of variable 2.}
 
-\item{scaling_multiplier}{Numeric scalar. Multiplier applied after
-normalisation. Use e.g. \code{0.5} to scale a unit-normalised shock to 0.5.
+\item{scaling_multiplier}{Number. Multiplies the responses after the
+normalisation, e.g. \code{0.5} for a shock half the normalised size.
 Default 1.}
 
-\item{common_ylim}{Logical. If \code{TRUE}, use a common y-axis range across
-all displayed variables. If \code{FALSE}, each panel uses its own y-range.
-Default \code{FALSE}.}
+\item{common_ylim}{Logical. Use the same y axis in every panel? Default
+\code{FALSE}.}
 
-\item{variables}{Integer vector. Which variables to plot (indices). Default:
-all variables.}
+\item{variables}{Integer vector or \code{NULL}. Variables to show; \code{NULL} shows
+all of them.}
 
-\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses
-\code{"Structural impulse response functions"}, and \code{NA} removes the title.}
+\item{title}{Character, \code{NULL} or \code{NA}. \code{NULL} gives a default title and
+\code{NA} removes it.}
 
-\item{irf_ci}{Optional list with \code{lower} and \code{upper} arrays matching \code{irfs},
-typically from \code{\link[=compute_irf_confint]{compute_irf_confint()}}. When supplied, confidence bands are
-drawn around each IRF.}
+\item{irf_ci}{Optional list with \code{lower} and \code{upper} arrays shaped like
+\code{irfs}, typically from \code{\link[=compute_irf_confint]{compute_irf_confint()}}. If given, the bands are
+drawn. When it also holds the bootstrap \code{draws} and the responses are
+normalised with \code{scaling_index}, the bands are recomputed from the
+normalised draws.}
 
-\item{conf_int}{Logical or \code{NULL}. If \code{TRUE}, draw confidence bands from
-\code{irf_ci}; if \code{FALSE}, suppress them. The default \code{NULL} draws bands when
-\code{irf_ci} is supplied. The standalone plotter cannot compute confidence
-intervals from \code{irfs} alone.}
+\item{ci_col, ci_border}{Fill and border colour of the bands.}
 
-\item{ci_col}{Fill colour for the confidence band.}
-
-\item{ci_border}{Border colour for the confidence band. Default \code{NA}.}
-
-\item{facet_ncol}{Integer. Number of facet columns. Default 2.}
+\item{facet_ncol}{Integer. Number of panel columns. Default 2.}
 }
 \value{
 A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
-Produces a faceted ggplot showing the normalised response of each selected
-variable to a chosen structural shock.
+One panel per selected variable showing its response to a chosen
+structural shock, optionally with confidence bands.
 }
 \examples{
 set.seed(1)

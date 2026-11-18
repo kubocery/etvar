@@ -2,7 +2,7 @@
 % Please edit documentation in R/plots.R
 \name{plot_etvar_errors}
 \alias{plot_etvar_errors}
-\title{Plot structural error time series}
+\title{Plot a structural error series}
 \usage{
 plot_etvar_errors(
   date_vec,
@@ -17,37 +17,35 @@ plot_etvar_errors(
 )
 }
 \arguments{
-\item{date_vec}{Date vector. Full date index for the structural errors.}
+\item{date_vec}{Vector of dates, one per error (the effective sample).}
 
-\item{errors}{Numeric vector. Structural error series.}
+\item{errors}{Numeric vector of structural errors.}
 
-\item{n_tail}{Integer. Number of trailing observations. Default 100.}
+\item{n_tail}{Integer. Number of trailing observations to show. Default
+100.}
 
-\item{event_dates}{Date vector (or \code{NULL}). Dates at which to draw
-vertical red dashed lines.}
+\item{event_dates}{Dates to mark with dashed red lines, or \code{NULL}.}
 
-\item{event_labels}{Character vector. Labels for the event dates.}
+\item{event_labels}{Character vector of labels, one per event date, or
+\code{NULL}.}
 
-\item{x_date_breaks}{Character. Date break spacing passed to
-\code{\link[ggplot2:scale_x_date]{ggplot2::scale_x_date()}} (e.g. \code{"1 week"}, \code{"2 weeks"}, \code{"1 month"}).
-Default \code{"1 week"}.}
+\item{x_date_breaks}{Character. Spacing of the date labels, passed to
+\code{\link[ggplot2:scale_x_date]{ggplot2::scale_x_date()}}, e.g. \code{"2 weeks"}. Default \code{"1 week"}.}
 
-\item{title}{Character scalar, \code{NULL}, or \code{NA}. \code{NULL} uses
-\code{"Structural error"}, and \code{NA} removes the title.}
+\item{title}{Character, \code{NULL} or \code{NA}. \code{NULL} gives a default title and
+\code{NA} removes it.}
 
-\item{panel_title}{Character scalar or \code{NULL}. Label displayed in the facet
-strip. \code{NULL} uses \code{"Target shock"}.}
+\item{panel_title}{Character or \code{NULL}. Label of the panel strip; \code{NULL}
+uses \code{"Target shock"}.}
 
-\item{line_color}{Character scalar. Colour of the structural-error line.
-Default \code{"black"}.}
+\item{line_color}{Character. Colour of the line. Default \code{"black"}.}
 }
 \value{
 A \link[ggplot2:ggplot]{ggplot2::ggplot} object.
 }
 \description{
-Creates a ggplot of one structural error series with optional vertical event
-lines and text annotations. A facet strip identifies the plotted shock so
-that the visual style matches the other ETVAR plots.
+Line plot of one structural error series, optionally with vertical
+markers and labels at event dates.
 }
 \examples{
 set.seed(1)
@@ -55,12 +53,11 @@ y <- matrix(rnorm(300), ncol = 3,
             dimnames = list(NULL, c("x1", "x2", "x3")))
 dates <- seq(as.Date("2024-01-01"), by = "day", length.out = 100)
 fit <- etvar(y, dates, target_date = dates[80], lags = 2, nimp = 10)
-effective_dates <- fit$dates[(fit$var$lags + 1):length(fit$dates)]
 plot_etvar_errors(
-  date_vec     = effective_dates,
-  errors       = fit$hd$errors_str[, fit$shock_index],
-  n_tail       = 40,
-  event_dates  = fit$target_date,
+  date_vec = fit$dates[-(1:2)],
+  errors = fit$hd$errors_str[, fit$shock_index],
+  n_tail = 40,
+  event_dates = fit$target_date,
   event_labels = "Event"
 )
 }

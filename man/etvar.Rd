@@ -2,7 +2,7 @@
 % Please edit documentation in R/etvar.R
 \name{etvar}
 \alias{etvar}
-\title{Estimate an Event-Targeted VAR model}
+\title{Estimate an event-targeted VAR}
 \usage{
 etvar(
   data,
@@ -28,143 +28,133 @@ etvar(
 )
 }
 \arguments{
-\item{data}{Matrix or data.frame (T x n). Time-series data.
-Each column is a variable. Must be numeric.}
+\item{data}{Matrix or data frame (T x n) of numeric series, one column per
+variable.}
 
-\item{dates}{Date vector of length T. Observation dates.}
+\item{dates}{Vector of T dates (anything \code{\link[=as.Date]{as.Date()}} accepts), strictly
+increasing.}
 
-\item{target_date}{Date, character, or a \strong{vector} of dates coercible
-with \code{as.Date()}. A single date targets one event; a vector of dates
-defines a target window where the objective is summed across all event
-dates simultaneously. All supplied dates must exist in \code{dates}.}
+\item{target_date}{One or more event dates, each of which must appear in
+\code{dates}. With several dates the deviations are summed over all of them
+(a target window).}
 
 \item{lags}{Integer. Number of VAR lags. Default 8.}
 
 \item{constant}{Logical. Include an intercept? Default \code{TRUE}.}
 
-\item{trend}{Integer. Trend order (0, 1, or 2). Default 0.}
+\item{trend}{Integer. Deterministic trend: 0 = none, 1 = linear,
+2 = quadratic. Default 0.}
 
-\item{shock_index}{Integer. Which structural shock to target. Default 1.}
+\item{shock_index}{Integer. Which structural shock is the target shock.
+Default 1.}
 
-\item{start_angles}{Numeric vector or \code{NULL}. Target-direction angles of
-length \code{n - 1} can be supplied to warm-start the optimisation. Legacy
-full Euler angles of length \code{n*(n-1)/2} are also accepted and converted
-to their target-shock direction. When \code{NULL}, the Cholesky target
-direction is used as the first start.}
+\item{start_angles}{Numeric vector or \code{NULL}. Starting angles for the
+optimiser, or the final angles when \code{optimize = FALSE}: either the \code{n - 1}
+angles of the target direction or the \code{n * (n - 1) / 2} angles of a full
+rotation as in \code{\link[=euler_rotation]{euler_rotation()}}. \code{NULL} starts from the Cholesky
+direction.}
 
-\item{optimize}{Logical. Run the three-stage optimisation? Default
-\code{TRUE}. Set to \code{FALSE} when supplying final \code{start_angles} directly.}
+\item{optimize}{Logical. Optimise the direction? Default \code{TRUE}. With
+\code{FALSE}, the model is built from \code{start_angles} (or the Cholesky
+direction) as they are.}
 
-\item{n_starts}{Integer. Total number of optimiser starting points.
-Only used when \code{start_angles = NULL}; the Cholesky target direction is
-always included. A higher number gives a better chance of finding the
-global minimum at the cost of runtime. Default 1.}
+\item{n_starts}{Integer. Number of starting points when
+\code{start_angles = NULL}; the Cholesky direction is always one of them.
+More starts make it less likely that the optimiser stops in a local
+minimum. Default 1.}
 
-\item{seed}{Integer or \code{NULL}. Random seed for reproducible
-multi-start draws. Default \code{NULL}.}
+\item{seed}{Integer or \code{NULL}. Seed for the random starting points.}
 
-\item{nimp}{Integer. Number of IRF horizons, including horizon
+\item{nimp}{Integer. Number of impulse-response horizons, including horizon
 zero. Default 30.}
 
-\item{variable_names}{Character vector of length n. Names for each variable.
-If \code{NULL}, uses column names of \code{data} or \verb{V1, V2, ...}.}
+\item{variable_names}{Character vector of n names. Defaults to the column
+names of \code{data}, or \code{V1}, \code{V2}, ... .}
 
-\item{control_nm}{List. Nelder-Mead control parameters. See \code{\link[=optim]{optim()}}.}
+\item{control_nm, control_bfgs}{Lists of \code{\link[=optim]{optim()}} controls for the
+Nelder-Mead and BFGS stages of \code{\link[=etvar_optimize]{etvar_optimize()}}.}
 
-\item{control_bfgs}{List. BFGS control parameters. See \code{\link[=optim]{optim()}}.}
+\item{n_cores}{Integer. Number of cores for running several starting
+points in parallel. Default 1.}
 
-\item{n_cores}{Integer. Number of CPU cores for parallel multi-start
-optimisation. Only used when \code{start_angles = NULL} and \code{n_starts > 1}.
-Default 1 (sequential); the maximum is 2.}
+\item{verbose}{Logical. Print progress messages? Default \code{FALSE}.}
 
-\item{verbose}{Logical. Print progress messages (via \code{\link[=message]{message()}})?
-Default \code{FALSE}. When \code{TRUE}, sequential optimisation also displays the
-live \code{\link[=optim]{optim()}} objective trace.}
+\item{start_date, end_date}{Dates or \code{NULL}. Restrict the sample used to
+estimate the VAR coefficients (inclusive bounds). The fitted VAR is still
+applied to the whole sample, so residuals, the decomposition and the
+event dates may lie outside the window. \code{NULL} means no bound.}
 
-\item{start_date}{Date, character, or \code{NULL}. Inclusive start of the
-sample used to estimate the initial reduced-form VAR. The fitted VAR is
-still evaluated over the full \code{data} sample. \code{NULL} uses the first
-available effective-sample date.}
-
-\item{end_date}{Date, character, or \code{NULL}. Inclusive end of the
-sample used to estimate the initial reduced-form VAR. The fitted VAR is
-still evaluated over the full \code{data} sample. \code{NULL} uses the last
-available date.}
-
-\item{start_parameterization}{Character. Interpretation of \code{start_angles}:
-\code{"target"}, \code{"full"}, or \code{"auto"} to infer from its length. In the
-ambiguous two-variable case, \code{"auto"} selects \code{"target"}.}
+\item{start_parameterization}{Character. How to read \code{start_angles}:
+\code{"target"}, \code{"full"}, or \code{"auto"} to decide from its length (with two
+variables \code{"auto"} reads it as \code{"target"}).}
 }
 \value{
-An S3 object of class \code{"etvar"} containing:
+An object of class \code{"etvar"}, a list with
 \describe{
-\item{var}{\code{etvar_var} object. Reduced-form VAR estimates.}
-\item{theta}{Numeric vector of length \code{n - 1}. Optimal target-direction
-angles.}
-\item{target_direction}{Numeric vector of length n. Identified unit
-direction of the target shock.}
-\item{rotation}{Matrix (n x n). Deterministic orthogonal completion of
-\code{target_direction}.}
-\item{parameterization}{The string \code{"target_direction"}.}
-\item{A0}{Matrix (n x n). Structural impact matrix.}
-\item{irfs}{Array (n x n x nimp). Structural IRFs.}
-\item{hd}{Named list from \code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}.}
-\item{shock_contributions}{Named list of historical shock-contribution
-matrices from \code{\link[=rearrange_shocks]{rearrange_shocks()}}.}
-\item{dates}{Date vector.}
-\item{data}{Original data matrix.}
-\item{target_dates}{Date vector. All targeted event dates.}
-\item{target_date}{Date. First (earliest) targeted event date.}
-\item{target_obs}{Integer vector. Row indices of the event dates in
-the raw data.}
-\item{start_date}{Date. Requested/resolved lower bound of the initial
-VAR estimation sample.}
-\item{end_date}{Date. Requested/resolved upper bound of the initial
-VAR estimation sample.}
-\item{estimation_dates}{Date vector. Effective observations actually
-used to estimate the initial VAR.}
-\item{datestar}{Offset from end for the earliest event date.}
-\item{shock_index}{Which shock was targeted.}
-\item{variable_names}{Character vector of variable names.}
-\item{objective}{Final value of the objective function.}
-\item{optimization}{Named list with optimiser diagnostics: convergence
-code and message, selected start and stage, objective values by start
-and stage, evaluation counts, elapsed time, controls, random seed, and
-starting values.}
+\item{var}{The reduced-form VAR, see \code{\link[=estimate_var]{estimate_var()}}.}
+\item{theta}{The \code{n - 1} angles of the target direction.}
+\item{target_direction}{The target column of \code{rotation}, a unit
+vector.}
+\item{rotation}{The rotation \code{Q} (n x n).}
+\item{A0}{Structural impact matrix \verb{-L Q} (n x n).}
+\item{irfs}{Structural impulse responses (n x n x \code{nimp}); see
+\code{\link[=compute_structural_irfs]{compute_structural_irfs()}}.}
+\item{hd}{Historical decomposition from \code{\link[=hist_decomposition_3d]{hist_decomposition_3d()}}, with
+the intervention path starting after the first event date.}
+\item{shock_contributions}{Contributions to the data (T x n matrices):
+those of \code{\link[=rearrange_shocks]{rearrange_shocks()}} (\code{total}, \code{target}, \code{target_stop} =
+target shocks up to and including the first event date,
+\code{target_rest} = target shocks after it, \code{others}), plus
+\code{target_event}, the contribution of the target shock on the first
+event date alone, and \code{target_before}, that of the target shocks
+before it.}
+\item{dates, data, variable_names}{The input data.}
+\item{target_dates}{All event dates, sorted.}
+\item{target_date}{The first event date.}
+\item{target_obs}{Rows of the event dates in \code{data}.}
+\item{datestar}{Number of observations after the first event date.}
+\item{start_date, end_date}{Bounds of the VAR estimation sample.}
+\item{estimation_dates}{Dates actually used to estimate the VAR.}
+\item{shock_index}{The target shock.}
+\item{objective}{The minimised objective, see \code{\link[=etvar_objective]{etvar_objective()}}.}
+\item{optimization}{Optimiser diagnostics, see \code{\link[=etvar_optimize]{etvar_optimize()}}.}
 }
 }
 \description{
-This is the main entry point for the package. It runs the full ETVAR
-pipeline in a single call:
+Fits an ETVAR model in one call: estimates the reduced-form VAR, finds the
+structural shock that best explains how all variables moved on the event
+date(s), and computes the impulse responses, the historical decomposition
+and everything the plotting methods need.
 }
 \details{
-\enumerate{
-\item Estimate a reduced-form VAR.
-\item Optimise the target-shock direction to target the event date.
-\item Build the structural impact matrix A0.
-\item Compute impulse response functions.
-\item Perform historical decomposition (with intervention path).
-\item Rearrange shock contributions for easy plotting.
-}
+The structural shocks are a rotation of the Cholesky shocks, \verb{A0 = -L Q}
+with \code{L} the lower Cholesky factor of the residual covariance and \code{Q} an
+orthogonal matrix. The event criterion pins down only the target column of
+\code{Q}, a unit vector described by \code{n - 1} angles, so only that column is
+estimated. The other columns complete it to a rotation in a fixed way; the
+individual non-target shocks are therefore not identified, although their
+combined contribution is.
 
-The event-targeting criterion identifies one unit direction: the selected
-target shock. Consequently, estimation uses \code{n - 1} parameters rather than
-a full \code{n*(n-1)/2} rotation. The remaining columns of the returned rotation
-are a deterministic orthogonal completion. Individual non-target shocks
-should not be interpreted as separately identified; their aggregate
-contribution is invariant to the chosen completion.
+A direction and its negative fit the event equally well. When the
+direction is optimised, its sign is chosen so that the target shock is
+positive on the first event date. The impulse responses describe a
+positive one-standard-deviation shock, so on impact they move the same way
+as the data did on the event date. Angles passed with \code{optimize = FALSE}
+are used as given.
 }
 \examples{
 set.seed(42)
-example_data <- matrix(rnorm(160), ncol = 2)
-example_dates <- seq.Date(as.Date("2020-01-01"), by = "day", length.out = 80)
-fit <- etvar(example_data, example_dates, target_date = example_dates[60],
-             lags = 2, optimize = FALSE, verbose = FALSE)
-print(fit)
+y <- matrix(rnorm(160), ncol = 2)
+dates <- seq(as.Date("2020-01-01"), by = "day", length.out = 80)
+fit <- etvar(y, dates, target_date = dates[60], lags = 2)
+fit
 }
 \references{
 Pinter, G., Smets, F. and Üslü, S. (2025). Market whiplash after the
 2025 tariff shock: an event-targeted VAR approach. \emph{BIS Working Papers},
 No. 1282. Bank for International Settlements.
 \url{https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach}
+}
+\seealso{
+\code{\link[=plot.etvar]{plot.etvar()}}, \code{\link[=compute_fevd]{compute_fevd()}}, \code{\link[=compute_irf_confint]{compute_irf_confint()}}
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/irfs.R
 \name{compute_irf_confint}
 \alias{compute_irf_confint}
-\title{Compute bootstrap confidence intervals for structural IRFs}
+\title{Bootstrap confidence bands for structural impulse responses}
 \usage{
 compute_irf_confint(
   object,
@@ -16,30 +16,37 @@ compute_irf_confint(
 \arguments{
 \item{object}{An \code{etvar} object.}
 
-\item{level}{Numeric. Confidence level. Default \code{0.95}.}
+\item{level}{Numeric. Confidence level. Default 0.95.}
 
-\item{n_boot}{Integer. Number of successful bootstrap draws. Default \code{500}.}
+\item{n_boot}{Integer. Number of successful draws. Default 500.}
 
-\item{seed}{Integer or \code{NULL}. Optional random seed. The caller's
-random-number state is restored on exit.}
+\item{seed}{Integer or \code{NULL}. Random seed for reproducible bands. The
+caller's random-number state is restored afterwards.}
 
-\item{nimp}{Integer or \code{NULL}. Number of IRF horizons. Default: the number
-of horizons stored in \code{object$irfs}.}
+\item{nimp}{Integer or \code{NULL}. Number of horizons. Defaults to the number
+stored in \code{object$irfs}.}
 
-\item{max_attempts}{Integer. Maximum bootstrap attempts. Extra attempts are
-used when a draw fails because the bootstrap covariance matrix is not
-positive definite.}
+\item{max_attempts}{Integer. Maximum number of draws to try. A draw is
+discarded and redrawn when its covariance matrix is not positive definite
+or the simulated data explode. Default \code{3 * n_boot}.}
 }
 \value{
-A list with \code{lower} and \code{upper} arrays, each with the same
-dimensions as \code{object$irfs}, plus bootstrap metadata.
+A list with \code{lower} and \code{upper} bounds (n x n x \code{nimp} arrays,
+shaped like \code{object$irfs} with the default \code{nimp}), the individual
+bootstrap responses in \code{draws} (n x n x \code{nimp} x \code{n_boot}), and the
+settings (\code{level}, \code{n_boot} successful draws, \code{n_attempts}, \code{method}).
+\code{\link[=plot_etvar_irfs]{plot_etvar_irfs()}} uses \code{draws} to normalise each draw on its own when
+the responses are rescaled with \code{scaling_index}.
 }
 \description{
-Builds residual-bootstrap samples from the fitted reduced-form VAR,
-re-estimates the VAR on each bootstrap sample, and recomputes structural
-IRFs using the fitted ETVAR target direction and its stored orthogonal
-completion. The rotation is held fixed so the structural shock labels stay
-aligned with the fitted model.
+Residual bootstrap: each draw runs the fitted VAR over its estimation
+sample, starting from the observed values just before it, with residuals
+resampled (whole rows, so the correlation between variables within a
+period is kept), re-estimates the VAR on the simulated data, and
+recomputes the impulse responses with the rotation of the fitted model
+held fixed. Holding the rotation fixed keeps
+the target shock the same shock in every draw. The bands are percentile
+intervals across the draws.
 }
 \examples{
 set.seed(1)

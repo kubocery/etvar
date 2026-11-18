@@ -13,39 +13,41 @@ etvar_objective(
 )
 }
 \arguments{
-\item{theta}{Numeric vector. Target-direction angles of length \code{n - 1}.
-For backward compatibility, full Euler angles of length \code{n*(n-1)/2} are
-also accepted when \code{parameterization = "auto"} or \code{"full"}.}
+\item{theta}{Numeric vector of angles. By default the \code{n - 1} angles of the
+target direction; with \code{parameterization = "full"}, the \code{n * (n - 1) / 2}
+angles of a full Givens rotation (see \code{\link[=euler_rotation]{euler_rotation()}}).}
 
 \item{var_est}{An \code{etvar_var} object from \code{\link[=estimate_var]{estimate_var()}}.}
 
-\item{target_obs}{Integer or integer vector. Row index (indices) of the
-event date(s) in the effective sample (i.e., in
-\code{var_est$Y}). Passing multiple indices defines a target
-window: the objective is the sum across all event dates.}
+\item{target_obs}{Integer vector. Row(s) of the event date(s) in the
+effective sample, i.e. in \code{var_est$Y}. With several rows the deviations
+are summed over all of them.}
 
 \item{shock_index}{Integer. Which structural shock to target. Default 1.}
 
-\item{parameterization}{Character. Interpretation of \code{theta}: \code{"target"}
-for the new target-direction angles, \code{"full"} for legacy full Euler
-angles, or \code{"auto"} to infer from the vector length. In the ambiguous
-two-variable case, \code{"auto"} selects \code{"target"}.}
+\item{parameterization}{Character. How to read \code{theta}: \code{"target"} (n - 1
+angles), \code{"full"} (a full rotation), or \code{"auto"} to decide from its
+length. With two variables both have length one and \code{"auto"} reads
+\code{theta} as \code{"target"}.}
 }
 \value{
-Scalar. Sum of absolute scaled deviations across all target dates
-(lower is better).
+The objective value, a single non-negative number (lower is
+better).
 }
 \description{
-Given a vector of target-direction angles, this function constructs the
-target direction and evaluates its event-date contribution. The target path
-is represented as precomputed quadratic forms in the direction vector, so a
-complete historical decomposition is not required for each evaluation.
+Measures how far the movements implied by a candidate target shock are
+from the observed movements on the event date(s). For each event date and
+variable, the change implied by the deterministic component plus the target
+shock is compared with the actual change, both divided by the standard
+deviation of that variable's first differences; the objective is the sum
+of the absolute deviations over variables and event dates.
 }
 \details{
-The optimiser minimises this function to find the rotation that makes the
-target shock best explain the event-date movements. \code{\link[=etvar_optimize]{etvar_optimize()}}
-prepares the direction-independent quantities once and reuses them throughout
-all optimisation stages and starting points.
+The candidate shock enters only through its unit direction q in the
+Cholesky-whitened space, and its contribution is a quadratic form in q. The
+quadratic forms are computed once, so evaluating the objective does not
+require a historical decomposition. \code{\link[=etvar_optimize]{etvar_optimize()}} minimises this
+function.
 }
 \examples{
 set.seed(1)

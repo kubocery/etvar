@@ -1,253 +1,241 @@
-# ==============================================================================
-# VAR estimation internals and main estimation function
-# ==============================================================================
-
-#' Trim data to the effective sample
+#' Estimate a reduced-form VAR
 #'
-#' Removes the first `lags` rows from the data matrix so that it aligns with
-#' the regressor matrix built by [build_var_regressors()].
+#' Fits a VAR(p) by OLS, equation by equation. Besides the coefficients and the
+#' residual covariance matrix (with a degrees-of-freedom correction), the
+#' result holds the companion matrix and the reduced-form moving-average
+#' (Wold) multipliers that the rest of the package builds on.
 #'
-#' @param data Matrix (T x n). Raw data.
-#' @param lags Integer. Number of lags to drop.
-#' @return Matrix ((T - lags) x n).
-#' @keywords internal
-trim_to_effective <- function(data, lags) {
-  data[seq.int(lags + 1L, nrow(data)), , drop = FALSE]
-}
-
-#' Build the VAR regressor matrix
-#'
-#' Constructs a matrix `X = [deterministic | Y_{t-1} | ... | Y_{t-p}]` where
-#' the deterministic block may include a constant, linear trend, or quadratic
-#' trend depending on the flags.
-#'
-#' @param data    Matrix (T x n). Raw data.
-#' @param Tr      Integer. Total rows in raw data.
-#' @param n       Integer. Number of variables.
-#' @param lags    Integer. Number of lags.
-#' @param trend   Integer. 0 = none, 1 = linear, 2 = quadratic.
-#' @param constant Integer. 1 = include intercept, 0 = omit.
-#' @return Matrix ((Tr - lags) x k). Regressor matrix.
-#' @keywords internal
-build_var_regressors <- function(data, Tr, n, lags, trend, constant) {
-  Ylag <- matrix(0, nrow = Tr, ncol = n * lags)
-
-  for (i in seq_len(lags)) {
-    col_start <- n * (i - 1) + 1
-    col_end   <- n * i
-    src_start <- lags + 1 - i
-    src_end   <- Tr - i
-    Ylag[seq.int(lags + 1L, Tr), col_start:col_end] <-
-      data[src_start:src_end, seq_len(n), drop = FALSE]
-  }
-
-  Ylag_trimmed <- Ylag[seq.int(lags + 1L, Tr), , drop = FALSE]
-  T_eff        <- Tr - lags
-  ones_vec     <- matrix(1, nrow = T_eff, ncol = 1)
-  tt           <- matrix(seq_len(T_eff), ncol = 1)
-  tt2          <- tt^2
-
-  if (constant == 1) {
-    if (trend == 1)      Xlag <- cbind(ones_vec, tt, Ylag_trimmed)
-    else if (trend == 2) Xlag <- cbind(ones_vec, tt, tt2, Ylag_trimmed)
-    else                 Xlag <- cbind(ones_vec, Ylag_trimmed)
-  } else {
-    if (trend == 1)      Xlag <- cbind(tt, Ylag_trimmed)
-    else if (trend == 2) Xlag <- cbind(tt, tt2, Ylag_trimmed)
-    else                 Xlag <- Ylag_trimmed
-  }
-
-  Xlag
-}
-
-#' Build the VAR companion matrix
-#'
-#' Stacks a VAR(p) as a VAR(1) system in companion form. Strips deterministic
-#' coefficient rows (constant + trend) from `ALPHA` and builds:
-#' \deqn{F = \begin{pmatrix} A_1 & A_2 & \cdots & A_p \\
-#' I & 0 & \cdots & 0 \\ & \ddots & & \vdots \\ 0 & \cdots & I & 0
-#' \end{pmatrix}}
-#'
-#' @param ALPHA    Matrix (k x n). OLS coefficient matrix.
-#' @param n        Integer. Number of endogenous variables.
-#' @param lags     Integer. Number of lags.
-#' @param constant Integer. 1 = intercept present, 0 = none.
-#' @param trend    Integer. Trend order (0, 1, or 2).
-#' @return Matrix (n*lags x n*lags). Companion matrix.
-#' @keywords internal
-build_companion <- function(ALPHA, n, lags, constant, trend) {
-  n_det     <- constant + trend
-  lag_coefs <- t(ALPHA[(n_det + 1):nrow(ALPHA), , drop = FALSE])
-  bottom    <- cbind(diag(n * (lags - 1)),
-                     matrix(0, nrow = n * (lags - 1), ncol = n))
-  rbind(lag_coefs, bottom)
-}
-
-#' Compute Wold impulse responses
-#'
-#' Computes the moving-average (Wold) representation by powering up the
-#' companion matrix, and the Cholesky-orthogonalized IRFs.
-#'
-#' @param BB    Matrix (nL x nL). Companion matrix.
-#' @param SIGMA Matrix (n x n). Reduced-form error covariance.
-#' @param n     Integer. Number of endogenous variables.
-#' @param nimp  Integer. Number of horizons, including horizon zero.
-#' @return Named list with `wimpu` (companion powers) and `cimpu` (Cholesky IRFs).
-#' @keywords internal
-compute_wold <- function(BB, SIGMA, n, nimp) {
-  rows_bb    <- nrow(BB)
-  cols_bb    <- ncol(BB)
-  wimpu      <- array(0, dim = c(rows_bb, cols_bb, nimp))
-  cimpu      <- array(0, dim = c(n, n, nimp))
-  chol_lower <- t(chol(SIGMA))
-
-  for (j in seq_len(nimp)) {
-    wimpu[, , j] <- if (j == 1) diag(rows_bb) else wimpu[, , j - 1] %*% BB
-    cimpu[, , j] <- wimpu[1:n, 1:n, j] %*% chol_lower
-  }
-
-  list(cimpu = cimpu, wimpu = wimpu)
-}
-
-
-#' Estimate a reduced-form VAR model
-#'
-#' Estimates a VAR(p) by OLS, computes the error covariance matrix (with
-#' degrees-of-freedom correction), Cholesky-orthogonalized shocks, the
-#' companion matrix, and the Wold impulse response representation.
-#'
-#' @param data     Matrix (T x n). Observed time-series data.
-#' @param lags     Integer. Number of lags p.
-#' @param constant Logical or integer. Include an intercept? Default `TRUE`.
-#' @param trend    Integer. Trend specification: 0 = none, 1 = linear,
-#'                 2 = quadratic. Default 0.
-#' @param nimp_wold Integer. Number of horizons for the Wold decomposition.
-#'                  Default 100.
+#' @param data Matrix or data frame (T x n) of observed series.
+#' @param lags Integer. Number of lags p.
+#' @param constant Logical. Include an intercept? Default `TRUE`.
+#' @param trend Integer. Deterministic trend: 0 = none, 1 = linear,
+#'   2 = quadratic. Default 0.
+#' @param nimp_wold Integer. Number of horizons (including horizon zero) for
+#'   the Wold multipliers. Default 100.
 #' @param estimation_rows Integer row indices or a logical vector selecting
-#'   which rows of the effective sample (`Y` and `X`) are used to estimate the
-#'   VAR coefficients and innovation covariance. Residuals are still evaluated
-#'   for the full effective sample. `NULL` uses every effective-sample row.
-#' @return A named list (class `"etvar_var"`) with elements:
+#'   the rows of the effective sample (`Y` and `X`) used to estimate the
+#'   coefficients and the covariance matrix. Residuals are still computed for
+#'   the whole effective sample. `NULL` (the default) uses every row.
+#' @return A list of class `"etvar_var"` with elements:
 #'   \describe{
-#'     \item{Y}{Dependent variable matrix (T_eff x n).}
-#'     \item{X}{Regressor matrix (T_eff x k).}
+#'     \item{Y}{Dependent variables over the effective sample (T_eff x n),
+#'       i.e. `data` without its first `lags` rows.}
+#'     \item{X}{Regressors (T_eff x k): deterministic terms followed by the
+#'       lags of all variables.}
 #'     \item{ALPHA}{OLS coefficients (k x n).}
-#'     \item{SIGMA}{Error covariance matrix (n x n).}
-#'     \item{eps}{Cholesky-orthogonalized residuals (T_eff x n).}
-#'     \item{residuals}{OLS residuals evaluated over the full effective sample
-#'       (T_eff x n).}
-#'     \item{residuals_estimation}{OLS residuals for the estimation rows.}
-#'     \item{estimation_rows}{Indices of the effective-sample rows used for
-#'       estimation.}
-#'     \item{companion}{Companion matrix (n*lags x n*lags).}
-#'     \item{wimpu}{Wold multiplier array (nL x nL x nimp_wold).}
-#'     \item{cimpu}{Cholesky IRFs (n x n x nimp_wold).}
-#'     \item{n}{Number of variables.}
-#'     \item{lags}{Number of lags.}
-#'     \item{constant}{Constant flag (integer).}
-#'     \item{trend}{Trend order (integer).}
-#'     \item{data}{Original data matrix.}
+#'     \item{SIGMA}{Residual covariance matrix (n x n).}
+#'     \item{eps}{Cholesky-orthogonalised residuals (T_eff x n).}
+#'     \item{residuals}{Residuals over the whole effective sample (T_eff x n).}
+#'     \item{residuals_estimation}{Residuals of the estimation rows.}
+#'     \item{estimation_rows}{Effective-sample rows used for estimation.}
+#'     \item{nobs_estimation}{Number of estimation rows.}
+#'     \item{companion}{Companion matrix (n p x n p).}
+#'     \item{wimpu}{Powers of the companion matrix (n p x n p x
+#'       `nimp_wold`); the top-left n x n block of slice h + 1 is the
+#'       horizon-h Wold multiplier.}
+#'     \item{cimpu}{Cholesky impulse responses (n x n x `nimp_wold`).}
+#'     \item{n, lags, constant, trend}{The model specification.}
+#'     \item{data}{The data as a numeric matrix.}
 #'   }
-#' @export
 #' @examples
-#' # Estimate a VAR(4) on simulated data
 #' set.seed(1)
-#' Y <- matrix(rnorm(500), ncol = 2)
-#' var_est <- estimate_var(Y, lags = 4)
-#' var_est$n
+#' y <- matrix(rnorm(500), ncol = 2)
+#' var_est <- estimate_var(y, lags = 4)
+#' var_est$ALPHA
+#' @export
 estimate_var <- function(data, lags, constant = TRUE, trend = 0,
                          nimp_wold = 100, estimation_rows = NULL) {
-  data      <- .etvar_numeric_matrix(data)
-  lags      <- .etvar_integer_scalar(lags, "lags", min = 1L)
-  constant  <- .etvar_flag(constant, "constant")
-  const_int <- as.integer(constant)
-  trend     <- .etvar_integer_scalar(trend, "trend", min = 0L, max = 2L)
+  data <- .etvar_numeric_matrix(data)
+  lags <- .etvar_integer_scalar(lags, "lags", min = 1L)
+  constant <- as.integer(.etvar_flag(constant, "constant"))
+  trend <- .etvar_integer_scalar(trend, "trend", min = 0L, max = 2L)
   nimp_wold <- .etvar_integer_scalar(nimp_wold, "nimp_wold", min = 1L)
-  Tr        <- nrow(data)
-  n         <- ncol(data)
+  n <- ncol(data)
 
-  if (Tr <= lags) {
+  if (nrow(data) <= lags) {
     stop("`data` must contain more rows than `lags`.", call. = FALSE)
   }
 
   Y <- trim_to_effective(data, lags)
-  X <- build_var_regressors(data, Tr, n, lags, trend, const_int)
-
-  Tr_eff <- nrow(Y)
-
-  if (is.null(estimation_rows)) {
-    estimation_rows <- seq_len(Tr_eff)
-  } else if (is.logical(estimation_rows)) {
-    if (length(estimation_rows) != Tr_eff || anyNA(estimation_rows)) {
-      stop("Logical `estimation_rows` must have one non-missing value ",
-           "per effective-sample row.", call. = FALSE)
-    }
-    estimation_rows <- which(estimation_rows)
-  } else {
-    if (!is.numeric(estimation_rows) || anyNA(estimation_rows) ||
-        any(!is.finite(estimation_rows)) ||
-        any(estimation_rows != as.integer(estimation_rows))) {
-      stop("`estimation_rows` must contain finite, non-missing row indices.",
-           call. = FALSE)
-    }
-    estimation_rows <- sort(unique(as.integer(estimation_rows)))
-    if (any(estimation_rows < 1L | estimation_rows > Tr_eff)) {
-      stop("`estimation_rows` contains indices outside the effective sample.",
-           call. = FALSE)
-    }
-  }
+  X <- build_var_regressors(data, lags, trend, constant)
+  estimation_rows <- check_estimation_rows(estimation_rows, nrow(Y))
 
   X_est <- X[estimation_rows, , drop = FALSE]
   Y_est <- Y[estimation_rows, , drop = FALSE]
-  n_parameters <- ncol(X_est)
-  dof <- nrow(Y_est) - n_parameters
-
+  dof <- nrow(X_est) - ncol(X_est)
   if (dof <= 0L) {
     stop("The VAR estimation window must contain more usable observations ",
-         "than coefficients per equation (", n_parameters, ").",
-         call. = FALSE)
+         "than coefficients per equation (", ncol(X_est), ").", call. = FALSE)
   }
-  if (qr(X_est)$rank < n_parameters) {
+  qr_x <- qr(X_est)
+  if (qr_x$rank < ncol(X_est)) {
     stop("The VAR regressor matrix is rank deficient in the estimation window.",
          call. = FALSE)
   }
 
-  ALPHA    <- qr.solve(X_est, Y_est)
+  ALPHA <- qr.coef(qr_x, Y_est)
   resid_est <- Y_est - X_est %*% ALPHA
-  resid     <- Y - X %*% ALPHA
-  sse       <- t(resid_est) %*% resid_est
-  SIGMA <- sse / as.numeric(dof)
+  resid <- Y - X %*% ALPHA
+  SIGMA <- crossprod(resid_est) / dof
 
-  chol_sigma <- tryCatch(
-    chol(SIGMA),
-    error = function(e) {
-      stop("The estimated innovation covariance matrix is not positive ",
-           "definite. Use a longer estimation window or remove collinear ",
-           "variables.", call. = FALSE)
-    }
-  )
-  eps <- resid %*% solve(chol_sigma)
+  chol_sigma <- tryCatch(chol(SIGMA), error = function(e) {
+    stop("The estimated innovation covariance matrix is not positive ",
+         "definite. Use a longer estimation window or remove collinear ",
+         "variables.", call. = FALSE)
+  })
 
-  BB   <- build_companion(ALPHA, n, lags, const_int, trend)
-  wold <- compute_wold(BB, SIGMA, n, nimp_wold)
+  companion <- build_companion(ALPHA, n, lags, constant, trend)
+  wold <- compute_wold(companion, SIGMA, n, nimp_wold)
 
   structure(list(
-    Y         = Y,
-    X         = X,
-    ALPHA     = ALPHA,
-    SIGMA     = SIGMA,
-    eps       = eps,
+    Y = Y,
+    X = X,
+    ALPHA = ALPHA,
+    SIGMA = SIGMA,
+    eps = resid %*% solve(chol_sigma),
     residuals = resid,
     residuals_estimation = resid_est,
     estimation_rows = estimation_rows,
     nobs_estimation = length(estimation_rows),
-    companion = BB,
-    wimpu     = wold$wimpu,
-    cimpu     = wold$cimpu,
-    n         = n,
-    lags      = lags,
-    constant  = const_int,
-    trend     = trend,
-    data      = data
+    companion = companion,
+    wimpu = wold$wimpu,
+    cimpu = wold$cimpu,
+    n = n,
+    lags = lags,
+    constant = constant,
+    trend = trend,
+    data = data
   ), class = "etvar_var")
+}
+
+
+# Internal helpers -------------------------------------------------------------
+
+check_estimation_rows <- function(rows, n_obs) {
+  if (is.null(rows)) {
+    return(seq_len(n_obs))
+  }
+  if (is.logical(rows)) {
+    if (length(rows) != n_obs || anyNA(rows)) {
+      stop("Logical `estimation_rows` must have one non-missing value ",
+           "per effective-sample row.", call. = FALSE)
+    }
+    return(which(rows))
+  }
+  if (!is.numeric(rows) || anyNA(rows) || any(!is.finite(rows)) ||
+      any(rows != round(rows))) {
+    stop("`estimation_rows` must contain finite, non-missing row indices.",
+         call. = FALSE)
+  }
+  rows <- sort(unique(as.integer(rows)))
+  if (any(rows < 1L | rows > n_obs)) {
+    stop("`estimation_rows` contains indices outside the effective sample.",
+         call. = FALSE)
+  }
+  rows
+}
+
+# The rows of `data` that have a full set of lags.
+trim_to_effective <- function(data, lags) {
+  data[seq.int(lags + 1L, nrow(data)), , drop = FALSE]
+}
+
+# Constant, linear trend and squared trend, in that order. The trend counts
+# effective-sample periods, so it is 1 in the first period with a full set of
+# lags. Returns NULL when the model has no deterministic terms.
+deterministic_regressors <- function(n_obs, constant, trend) {
+  t <- seq_len(n_obs)
+  cbind(
+    if (constant == 1L) rep(1, n_obs),
+    if (trend >= 1L) t,
+    if (trend >= 2L) t^2
+  )
+}
+
+# X = [deterministic terms | y_{t-1} | ... | y_{t-p}] for the effective sample.
+build_var_regressors <- function(data, lags, trend, constant) {
+  n_raw <- nrow(data)
+  lagged <- lapply(seq_len(lags), function(k) {
+    data[seq.int(lags + 1L - k, n_raw - k), , drop = FALSE]
+  })
+  unname(cbind(
+    deterministic_regressors(n_raw - lags, constant, trend),
+    do.call(cbind, lagged)
+  ))
+}
+
+# The rows of ALPHA that multiply the lagged variables, (n p) x n.
+lag_coefficients <- function(ALPHA, n, lags, constant, trend) {
+  ALPHA[constant + trend + seq_len(n * lags), , drop = FALSE]
+}
+
+# Companion form of the VAR: the lag matrices A_1, ..., A_p in the first n
+# rows and an identity block that shifts the older lags down.
+build_companion <- function(ALPHA, n, lags, constant, trend) {
+  top <- t(lag_coefficients(ALPHA, n, lags, constant, trend))
+  shift <- cbind(diag(n * (lags - 1L)), matrix(0, n * (lags - 1L), n))
+  rbind(top, shift)
+}
+
+# Powers of the companion matrix (wimpu) and the Cholesky impulse responses
+# (cimpu) for horizons 0, ..., nimp - 1.
+compute_wold <- function(companion, SIGMA, n, nimp) {
+  m <- nrow(companion)
+  wimpu <- array(0, dim = c(m, m, nimp))
+  cimpu <- array(0, dim = c(n, n, nimp))
+  chol_lower <- t(chol(SIGMA))
+
+  power <- diag(m)
+  for (h in seq_len(nimp)) {
+    if (h > 1L) power <- power %*% companion
+    wimpu[, , h] <- power
+    cimpu[, , h] <- power[seq_len(n), seq_len(n)] %*% chol_lower
+  }
+  list(wimpu = wimpu, cimpu = cimpu)
+}
+
+# Runs the VAR forward, y_t = offset_t + A_1 y_{t-1} + ... + A_p y_{t-p},
+# for every row of `offset`. `initial` holds the p pre-sample values (oldest
+# first) and `offset` everything that does not depend on lagged y:
+# deterministic terms and shocks. Only the simulated periods are returned.
+#
+# Shock contributions in the historical decomposition, the deterministic path
+# and the bootstrap samples are all produced by this one loop.
+var_recursion <- function(lag_coefficients, initial, offset) {
+  lags <- nrow(initial)
+  n <- ncol(offset)
+  transition <- t(lag_coefficients)
+  offset <- t(offset)
+  path <- matrix(0, nrow = n, ncol = ncol(offset))
+
+  # state = (y_{t-1}, ..., y_{t-p}) stacked, matching the order of the lag
+  # columns in X.
+  state <- as.vector(t(initial[lags:1, , drop = FALSE]))
+  keep <- seq_len(n * (lags - 1L))
+  for (i in seq_len(ncol(offset))) {
+    y <- offset[, i] + transition %*% state
+    path[, i] <- y
+    state <- c(y, state[keep])
+  }
+  t(path)
+}
+
+# The path the model implies with every shock switched off: the pre-sample
+# values (read from the first row of X) carried forward by the lag dynamics
+# and the deterministic terms.
+deterministic_path <- function(ALPHA, X, n, lags, trend, constant) {
+  n_det <- constant + trend
+  first_lags <- matrix(X[1L, n_det + seq_len(n * lags)], nrow = lags,
+                       byrow = TRUE)
+  initial <- first_lags[lags:1, , drop = FALSE]
+
+  offset <- matrix(0, nrow = nrow(X), ncol = n)
+  if (n_det > 0L) {
+    offset <- deterministic_regressors(nrow(X), constant, trend) %*%
+      ALPHA[seq_len(n_det), , drop = FALSE]
+  }
+
+  path <- var_recursion(lag_coefficients(ALPHA, n, lags, constant, trend),
+                        initial, offset)
+  rbind(initial, path)
 }

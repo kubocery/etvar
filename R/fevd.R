@@ -1,7 +1,3 @@
-# ==============================================================================
-# Structural forecast error variance decomposition
-# ==============================================================================
-
 #' Compute an ETVAR forecast error variance decomposition
 #'
 #' Computes the structural forecast error variance decomposition (FEVD) implied
@@ -46,6 +42,8 @@
 #'       non-target structural-shock shares.}
 #'     \item{horizons}{Integer forecast horizons, beginning at 1.}
 #'     \item{target_shock}{The separately reported structural shock.}
+#'     \item{is_identified_shock}{Whether that is the event-targeted shock of
+#'       the fit.}
 #'     \item{variable_names}{Variable labels inherited from `object`.}
 #'     \item{method}{The string `"structural"`.}
 #'   }
@@ -144,6 +142,7 @@ compute_fevd <- function(object, nimp = NULL, target_shock = NULL) {
       others = others,
       horizons = seq_len(nimp),
       target_shock = target_shock,
+      is_identified_shock = identical(target_shock, object$shock_index),
       variable_names = variable_names,
       method = "structural"
     ),

@@ -131,6 +131,15 @@ shock_contributions_window <- rearrange_shocks(
   nrow(data), n, target_shock = 1
 )
 
+# Separate the first event-day shock from the target shocks before it
+hd_before <- hist_decomposition_3d(
+  A0 = A0, ALPHA = var_est$ALPHA, Y = var_est$Y, X = var_est$X,
+  n = n, lags = 8, trend = 0, constant = 1L,
+  datestar = datestar + 1
+)
+target_before <- hd_before$hist_matrix_stop[, , 1]
+target_event <- shock_contributions_window$target_stop - target_before
+
 # 8. Standalone plots
 plot_etvar_irfs(irfs_window, variable_names, shock_index = 1,
                 scaling_index = c(2, 1, 1))
@@ -147,9 +156,9 @@ plot_etvar_hd(
   date_vec       = dates,
   data           = data,
   deterministic  = hd_window$deterministic,
-  target_stop    = shock_contributions_window$target_stop,
+  target_event   = target_event,
   target_rest    = shock_contributions_window$target_rest,
-  others         = shock_contributions_window$others,
+  others         = shock_contributions_window$others + target_before,
   datestar       = datestar,
   variable_names = variable_names,
   n_tail         = 41,

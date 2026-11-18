@@ -7,13 +7,14 @@
 hist_decomposition(A0, ALPHA, Y, X, n, lags, trend, constant)
 }
 \arguments{
-\item{A0}{Matrix (n x n). Structural impact matrix.}
+\item{A0}{Matrix (n x n). Structural impact matrix; the structural errors
+are \code{solve(A0, u_t)} for reduced-form residuals \code{u_t}.}
 
-\item{ALPHA}{Matrix (k x n). VAR coefficient matrix.}
+\item{ALPHA}{Matrix (k x n). VAR coefficients, e.g. from \code{\link[=estimate_var]{estimate_var()}}.}
 
-\item{Y}{Matrix (T_eff x n). Dependent variable matrix.}
+\item{Y}{Matrix (T_eff x n). Dependent variables.}
 
-\item{X}{Matrix (T_eff x k). Regressor matrix.}
+\item{X}{Matrix (T_eff x k). Regressors.}
 
 \item{n}{Integer. Number of variables.}
 
@@ -21,30 +22,34 @@ hist_decomposition(A0, ALPHA, Y, X, n, lags, trend, constant)
 
 \item{trend}{Integer. 0 = none, 1 = linear, 2 = quadratic.}
 
-\item{constant}{Integer. 1 = include intercept, 0 = omit.}
+\item{constant}{Integer. 1 = intercept, 0 = no intercept.}
 }
 \value{
-Named list:
+A list with
 \describe{
-\item{hist_matrix}{Array (Traw x n x n). Detrended shock contributions
-where \verb{[t, v, s]} is the contribution of shock \code{s} to variable \code{v}
-at time \code{t}.}
-\item{deterministic}{Matrix (Traw x n). Deterministic component path.}
+\item{hist_matrix}{Array (T x n x n). Element \verb{[t, v, s]} is the
+contribution of shock \code{s} to variable \code{v} at time \code{t}, where
+T = T_eff + lags covers the raw sample. The first \code{lags} rows are
+zero.}
+\item{deterministic}{Matrix (T x n). Deterministic component.}
 \item{errors_str}{Matrix (T_eff x n). Structural errors.}
 }
 }
 \description{
-Decomposes each variable into the contribution of each structural shock and
-a deterministic (trend + constant) component. For every shock, a
-counterfactual path is built recursively using only that shock's
-reduced-form innovations; the deterministic component is then subtracted.
+Splits every variable into a deterministic component (pre-sample values
+carried forward by the constant and trend) and the contribution of each
+structural shock. Because the VAR is linear, the contributions and the
+deterministic component add up to the data.
 }
 \examples{
 set.seed(1)
 y <- matrix(rnorm(300), ncol = 3)
 var_est <- estimate_var(y, lags = 2, nimp_wold = 10)
-A0 <- -t(chol(var_est$SIGMA))  # Cholesky identification
+A0 <- t(chol(var_est$SIGMA))  # recursive (Cholesky) identification
 hd <- hist_decomposition(A0, var_est$ALPHA, var_est$Y, var_est$X,
                          n = 3, lags = 2, trend = 0, constant = 1)
-str(hd, max.level = 1)
+
+# contributions plus the deterministic part reproduce the data
+total <- hd$deterministic + rowSums(hd$hist_matrix, dims = 2)
+all.equal(total, y, check.attributes = FALSE)
 }

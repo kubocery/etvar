@@ -27,6 +27,8 @@ target-shock share.}
 non-target structural-shock shares.}
 \item{horizons}{Integer forecast horizons, beginning at 1.}
 \item{target_shock}{The separately reported structural shock.}
+\item{is_identified_shock}{Whether that is the event-targeted shock of
+the fit.}
 \item{variable_names}{Variable labels inherited from \code{object}.}
 \item{method}{The string \code{"structural"}.}
 }

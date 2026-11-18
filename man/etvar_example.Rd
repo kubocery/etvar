@@ -45,9 +45,10 @@ etvar_example
 Seven daily financial-market series from 4 January 2021 to 15 May 2025,
 suitable for estimating an event-targeted VAR around the US tariff
 announcement of 2 April 2025 (first trading-day reaction on 3 April 2025).
-The variables mirror those used by Pinter, Smets and \enc{Üslü}{Uslu} (2025);
-the oil price and five-year breakeven inflation rate stand in for the
-copper price and one-year inflation swap rate used in the paper.
+The variables mirror those used by Pinter, Smets and
+\enc{Üslü}{Uslu} (2025); the oil price and five-year breakeven inflation
+rate stand in for the copper price and one-year inflation swap rate used in
+the paper.
 }
 \details{
 These substitutes are not equivalent to the paper's series, so results based
@@ -74,9 +75,9 @@ fit
 }
 }
 \references{
-Pinter, G., Smets, F. and \enc{Üslü}{Uslu}, S. (2025). Market whiplash after
-the 2025 tariff shock: an event-targeted VAR approach. \emph{BIS Working Papers},
-No. 1282. Bank for International Settlements.
+Pinter, G., Smets, F. and \enc{Üslü}{Uslu}, S. (2025). Market whiplash
+after the 2025 tariff shock: an event-targeted VAR approach. \emph{BIS Working
+Papers}, No. 1282. Bank for International Settlements.
 \url{https://www.bis.org/publications/working-paper-1282-market-whiplash-after-2025-tariff-shock-event-targeted-var-approach}
 }
 \keyword{datasets}

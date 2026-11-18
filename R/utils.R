@@ -1,4 +1,4 @@
-# Internal validation helpers -------------------------------------------------
+# Argument checks --------------------------------------------------------------
 
 .etvar_integer_scalar <- function(x, arg, min = NULL, max = NULL) {
   valid <- is.numeric(x) && length(x) == 1L && !is.na(x) && is.finite(x) &&
@@ -87,6 +87,32 @@
   as.integer(x)
 }
 
+.etvar_check_labels <- function(x, n, arg) {
+  if (!is.character(x) || length(x) != n || anyNA(x) || any(!nzchar(x))) {
+    stop("`", arg, "` must contain one non-empty name per variable.",
+         call. = FALSE)
+  }
+  invisible(x)
+}
+
+.etvar_string <- function(x, arg) {
+  if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x)) {
+    stop("`", arg, "` must be a non-empty character string.", call. = FALSE)
+  }
+  x
+}
+
+# Plot titles: NULL means the default, NA means no title.
+.etvar_title <- function(title, default, arg = "title") {
+  if (is.null(title)) {
+    return(default)
+  }
+  if (length(title) != 1L) {
+    stop("`", arg, "` must be NULL, NA, or a single string.", call. = FALSE)
+  }
+  if (is.na(title)) "" else as.character(title)
+}
+
 .etvar_validate_decomposition <- function(A0, ALPHA, Y, X, n, lags,
                                            trend, constant) {
   n <- .etvar_integer_scalar(n, "n", min = 1L)
@@ -119,8 +145,8 @@
        trend = trend, constant = constant)
 }
 
-# Save and restore the global random-number state so that functions accepting
-# a `seed` argument do not permanently alter the user's RNG stream.
+# Functions with a `seed` argument restore the caller's random-number state
+# when they finish.
 .etvar_get_rng <- function() {
   if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
     get(".Random.seed", envir = globalenv(), inherits = FALSE)
