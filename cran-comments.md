@@ -11,7 +11,6 @@ contacted and asked to be cited rather than listed as contributors.
 
 * local Windows 11, R 4.6.1
 * win-builder, R-devel and R-release
-* macOS builder (mac.r-project.org), R-release
 
 ## R CMD check results
 
